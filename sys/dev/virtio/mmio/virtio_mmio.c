@@ -335,6 +335,7 @@ vtmmio_read_ivar(device_t dev, device_t child, int index, uintptr_t *result)
 		break;
 	case VIRTIO_IVAR_SUBVENDOR:
 	case VIRTIO_IVAR_DEVICE:
+	case VIRTIO_IVAR_MODERN:
 		/*
 		 * Dummy value for fields not present in this bus.  Used by
 		 * bus-agnostic virtio_child_pnpinfo_str.

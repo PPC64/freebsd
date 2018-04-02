@@ -10,6 +10,8 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. Neither the name of the author nor the names of its contributors may
+ *    be used to endorse or promote products derived from this software
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -22,6 +24,7 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
+ *
  */
 
 #include <machine/asm.h>
@@ -30,14 +33,6 @@ __FBSDID("$FreeBSD$");
 #if 0
         RCSID("$NetBSD: bcopy.S,v 1.0 2018/03/22 13:37:42 lffpires Exp $")
 #endif
-
-#define BCOPY_MULTI_ALIGNMENT_BYTES 4
-#define BCOPY_MULTI_ALIGNMENT_MASK (BCOPY_MULTI_ALIGNMENT_BYTES - 1)
-#define BCOPY_MULTI_BLOCK_SIZE_BITS 6
-#define BCOPY_MULTI_BLOCK_SIZE (1 << BCOPY_MULTI_BLOCK_SIZE_BITS)
-#define BCOPY_MULTI_BLOCK_SIZE_MASK (BCOPY_MULTI_BLOCK_SIZE - 1)
-
-        .text
 
 #ifdef MEMCOPY
 ENTRY(memcpy)
@@ -52,8 +47,13 @@ ENTRY(bcopy)
         cmpld   %r3, %r4
         beqlr-  %cr0
 
-#if !defined(MEMCOPY) && !defined(MEMMOVE)
-        std     %r3, -136(%r1)                                  // save dst
+#if defined(MEMCOPY) || defined(MEMMOVE)
+        std     %r3, -8(%r1)                                  // save dst
+#else
+	// bcopy has src and dest in a different order than memcpy/memmove
+        mr %r7, %r3
+        mr %r3, %r4
+        mr %r4, %r7
 #endif
 
         // src > dst? if so, copy data in backward.
@@ -294,8 +294,8 @@ ENTRY(bcopy)
 .Lmemcpy_end:
         // finished copying. 
 
-#if !defined(MEMCOPY) && !defined(MEMMOVE)
-        ld      %r3, -136(%r1)                                  // restore dst
+#if defined(MEMCOPY) || defined(MEMMOVE)
+        ld      %r3, -8(%r1)                                  // restore dst
 #endif
         blr
 

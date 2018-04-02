@@ -48,333 +48,255 @@ ENTRY(memmove)
 ENTRY(bcopy)
 #endif
 #endif
-        or.     %r5, %r5, %r5                                   // len == 0? if so, nothing to do
+        // src == dst? if so, nothing to do
+        cmpld   %r3, %r4
         beqlr-  %cr0
-
-        cmpld   %r3, %r4                                        // src == dst? if so, nothing to do
-        beqlr-  %cr0
-
-        // check if dst and src are aligned to each other
-        andi.   %r6, %r3, BCOPY_MULTI_ALIGNMENT_MASK
-        andi.   %r7, %r4, BCOPY_MULTI_ALIGNMENT_MASK
-        cmpd    %cr0, %r6, %r7
-        bne     %cr0, .Lmisaligned_128_64_32_8
 
 #if !defined(MEMCOPY) && !defined(MEMMOVE)
         std     %r3, -136(%r1)                                  // save dst
 #endif
 
-        // set up copy parameters
-        subfic  %r7, %r6, BCOPY_MULTI_ALIGNMENT_BYTES
-        andi.   %r7, %r7, BCOPY_MULTI_ALIGNMENT_MASK            // %r7 = bytes before the aligned section of the buffer
-        sub     %r8, %r5, %r7                                   // %r8 = number of bytes in and after the aligned section of the buffer
-        andi.   %r9, %r8, BCOPY_MULTI_BLOCK_SIZE_MASK           // %r9 = number of bytes after the aligned section of the buffer
-        srdi    %r10, %r8, BCOPY_MULTI_BLOCK_SIZE_BITS          // %r10 = number of BLOCKS in the aligned section of the buffer
+        // src > dst? if so, copy data in backward.
+        bt  gt,.Lmemcpy_256_128_64_32_8_rev
 
-        cmpd    %cr0, %r4, %r3                                  // forward or backward copy?
-        blt     .Laligned_backward_copy
+        // if data size >= 32, copy by 256 block.
+        cmpdi %r5,32
+        bt  lt, .Lmemcpy_128_64_32_8
 
-        // set up forward copy parameters
-        std     %r7, -144(%r1)                                  // number of bytes to copy in phase 1
-        std     %r9, -160(%r1)                                  // number of bytes to copy in phase 3
-        std     %r10, -152(%r1)                                 // number of BLOCKS to copy in phase 2
+.Lmemcpy_256:
+        // copy by 256 block.
+        srdi %r10,%r5,5
+        clrldi %r5,%r5,59
+        mtctr %r10
 
-        li      %r8, 1                                          // incrementx for phases 1 and 3
-        li      %r9, 0                                          // pre increment for phase 2
-        li      %r10, BCOPY_MULTI_BLOCK_SIZE                    // post increment for phase 2
+.Lmemcpy_256_loop:
+        // while counter > 0, copy 256 block.
+        ld %r7,0(%r4)
+        std %r7,0(%r3)
+        ld %r6,8(%r4)
+        std %r6,8(%r3)
+        ld %r10,16(%r4)
+        std %r10,16(%r3)
+        ld %r11,24(%r4)
+        std %r11,24(%r3)
 
-        b       .Laligned_phase1
+        // increment data addresses.
+        addi %r4,%r4,32
+        addi %r3,%r3,32
 
-.Laligned_backward_copy:
-        // set up backward copy parameters
-        std     %r7, -160(%r1)                                  // number of bytes to copy in phase 3
-        std     %r9, -144(%r1)                                  // number of bytes to copy in phase 1
-        std     %r10, -152(%r1)                                 // number of BLOCKS to copy in phase 2
+        bdnz .Lmemcpy_256_loop
 
-        li      %r8, -1                                         // incrementx for phases 1 and 3
-        li      %r9, (1 - BCOPY_MULTI_BLOCK_SIZE)               // pre increment for phase 2
-        li      %r10, -1                                        // post increment for phase 2
-
-        add     %r6, %r5, %r8                                   // %r6 = len - 1
-        add     %r3, %r3, %r6                                   // advance to the last position in dst
-        add     %r4, %r4, %r6                                   // advance to the last position in src
-
-.Laligned_phase1:
-        ld      %r7, -144(%r1)                                  // number of bytes to copy in phase 1
-        cmpldi  %r7, 0                                          // %r7 == 0? (if so, nothing to copy in phase 1)
-        beq+    %cr0, .Laligned_phase2
-
-        mtctr   %r7
-.Laligned_phase1_loop:
-        lbz     %r6, 0(%r4)
-        add     %r4, %r4, %r8                                   // phase 1 increment
-        stb     %r6, 0(%r3)
-        add     %r3, %r3, %r8                                   // phase 1 increment
-
-        bdnz    .Laligned_phase1_loop
-
-.Laligned_phase2:
-        ld      %r7, -152(%r1)                                  // number of BLOCKS to copy in phase 2
-        cmpldi  %r7, 0                                          // %r7 == 0? (if so, nothing to copy in phase 2)
-        beq     %cr0, .Laligned_phase3
-
-        // save %r16-%r31 - is there a better way to do this?
-        std     %r16, -8(%r1)
-        std     %r17, -16(%r1)
-        std     %r18, -24(%r1)
-        std     %r19, -32(%r1)
-        std     %r20, -40(%r1)
-        std     %r21, -48(%r1)
-        std     %r22, -56(%r1)
-        std     %r23, -64(%r1)
-        std     %r24, -72(%r1)
-        std     %r25, -80(%r1)
-        std     %r26, -88(%r1)
-        std     %r27, -96(%r1)
-        std     %r28, -104(%r1)
-        std     %r29, -112(%r1)
-        std     %r30, -120(%r1)
-        std     %r31, -128(%r1)
-
-        mtctr   %r7
-.Laligned_phase2_loop:
-        add     %r4, %r4, %r9                                   // phase 2 pre increment
-        lmw     %r16, 0(%r4)
-        add     %r4, %r4, %r10                                  // phase 2 post increment
-
-        add     %r3, %r3, %r9                                   // phase 2 pre increment
-        stmw    %r16, 0(%r3)
-        add     %r3, %r3, %r10                                  // phase 2 post increment
-
-        bdnz    .Laligned_phase2_loop
-
-        // restore %r16-%r31 - is there a better way to do this?
-        ld      %r16, -8(%r1)
-        ld      %r17, -16(%r1)
-        ld      %r18, -24(%r1)
-        ld      %r19, -32(%r1)
-        ld      %r20, -40(%r1)
-        ld      %r21, -48(%r1)
-        ld      %r22, -56(%r1)
-        ld      %r23, -64(%r1)
-        ld      %r24, -72(%r1)
-        ld      %r25, -80(%r1)
-        ld      %r26, -88(%r1)
-        ld      %r27, -96(%r1)
-        ld      %r28, -104(%r1)
-        ld      %r29, -112(%r1)
-        ld      %r30, -120(%r1)
-        ld      %r31, -128(%r1)
-
-.Laligned_phase3:
-        ld      %r7, -160(%r1)                                  // number of bytes to copy in phase 3
-        cmpldi  %r7, 0                                          // %r7 == 0? (if so, nothing to copy in phase 3)
-        beq     %cr0, .Laligned_done
-
-        mtctr   %r7
-.Laligned_phase3_loop:
-        lbz     %r6, 0(%r4)
-        add     %r4, %r4, %r8                                   // phase 3 increment
-        stb     %r6, 0(%r3)
-        add     %r3, %r3, %r8                                   // phase 3 increment
-
-        bdnz    .Laligned_phase3_loop
-
-.Laligned_done:
-        // done copying
-
-#if !defined(MEMCOPY) && !defined(MEMMOVE)
-        ld      %r3, -136(%r1)                                  // restore dst
-#endif
-        blr
-
-.Lmisaligned_128_64_32_8:
-        // if src address >= dst address copy forward,
-        // else copy backward.
-        cmpd  %r3,%r4
-        bt  gt,.Lmisaligned_128_64_32_8_rev
-
-        mr  %r8,%r4 // Src pointer in R8.
-        mr  %r9,%r3 // Dst pointer in R9.
-
-        // if variable size >= 16, copy by quadword.
+.Lmemcpy_128_64_32_8:
+        // if data size >= 16, copy by quadword.
         cmpdi %r5,16
-        bt  lt, .Lmisaligned_64_32_8
+        bt  lt, .Lmemcpy_64_32_8
 
-.Lmisaligned_128:
+.Lmemcpy_128:
         // copy by quadword.
         srdi %r10,%r5,4
         clrldi %r5,%r5,60
         mtctr %r10
 
-.Lmisaligned_128_loop:
+.Lmemcpy_128_loop:
         // while counter > 0, copy quadword.
-        ld %r6,0(%r8)
-        std %r6,0(%r9)
-        ld %r7,8(%r8)
-        std %r7,8(%r9)
+        ld %r6,0(%r4)
+        std %r6,0(%r3)
+        ld %r7,8(%r4)
+        std %r7,8(%r3)
 
-        // increment variable addresses.
-        addi %r8,%r8,16
-        addi %r9,%r9,16
+        // increment data addresses.
+        addi %r4,%r4,16
+        addi %r3,%r3,16
 
-        bdnz .Lmisaligned_128_loop
+        bdnz .Lmemcpy_128_loop
 
-.Lmisaligned_64_32_8:
-        // if variable size >= 8, copy by double word.
+.Lmemcpy_64_32_8:
+        // if data size >= 8, copy by double word.
         cmpdi %r5,8
-        bt  lt, .Lmisaligned_32_8
+        bt  lt, .Lmemcpy_32_8
 
-.Lmisaligned_64:
+.Lmemcpy_64:
         // copy by double word.
         srdi %r10,%r5,3
         clrldi %r5,%r5,61
         mtctr %r10
 
-.Lmisaligned_64_loop:
+.Lmemcpy_64_loop:
         // while counter > 0, copy double word.
-        ld %r6,0(%r8)
-        std %r6,0(%r9)
+        ld %r6,0(%r4)
+        std %r6,0(%r3)
 
-        // increment variable addresses.
-        addi %r8,%r8,8
-        addi %r9,%r9,8
+        // increment data addresses.
+        addi %r4,%r4,8
+        addi %r3,%r3,8
 
-        bdnz .Lmisaligned_64_loop
+        bdnz .Lmemcpy_64_loop
 
-.Lmisaligned_32_8:
-        // if variable size >= 4, copy by word.
+.Lmemcpy_32_8:
+        // if data size >= 4, copy by word.
         cmpdi %r5,4
-        bt  lt, .Lmisaligned_8
+        bt  lt, .Lmemcpy_8
 
-.Lmisaligned_32:
+.Lmemcpy_32:
         // copy by word.
         srdi %r10,%r5,2
         clrldi %r5,%r5,62
         mtctr %r10
 
-.Lmisaligned_32_loop:
+.Lmemcpy_32_loop:
         // while counter > 0, copy word.
-        lwz %r6,0(%r8)
-        stw %r6,0(%r9)
+        lwz %r6,0(%r4)
+        stw %r6,0(%r3)
 
-        // increment variable addresses.
-        addi  %r8,%r8,4
-        addi  %r9,%r9,4
+        // increment data addresses.
+        addi  %r4,%r4,4
+        addi  %r3,%r3,4
 
-        bdnz .Lmisaligned_32_loop
+        bdnz .Lmemcpy_32_loop
 
-.Lmisaligned_8:
-        // if variable size <= 0, finished copying.
+.Lmemcpy_8:
+        // if data size <= 0, finished copying.
         cmpdi %r5,1
-        bt  lt, .Lmisaligned_end
+        bt  lt, .Lmemcpy_end
         mtctr %r5
 
-.Lmisaligned_8_loop:
+.Lmemcpy_8_loop:
         // while counter > 0, copy byte.
-        lbz %r6,0(%r8)
-        stb %r6,0(%r9)
+        lbz %r6,0(%r4)
+        stb %r6,0(%r3)
 
-        // increment variable addresses.
-        addi  %r8,%r8,1
-        addi  %r9,%r9,1
+        // increment data addresses.
+        addi  %r4,%r4,1
+        addi  %r3,%r3,1
 
-        bdnz .Lmisaligned_8_loop
-        b .Lmisaligned_end
+        bdnz .Lmemcpy_8_loop
+        b .Lmemcpy_end
 
-.Lmisaligned_128_64_32_8_rev:
+.Lmemcpy_256_128_64_32_8_rev:
         // src address > dst.
         // set addresses to end of input variables for backward copy.
-        add %r8,%r4,%r5
-        add %r9,%r3,%r5
+        add %r4,%r4,%r5
+        add %r3,%r3,%r5
 
-        // if variable size >= 16, copy by quadword.
+        // if data size >= 32, copy by 256 block.
+        cmpdi %r5,32
+        bt  lt, .Lmemcpy_128_64_32_8_rev
+
+.Lmemcpy_256_rev:
+        // copy by 256 block.
+        srdi %r10,%r5,5
+        clrldi %r5,%r5,59
+        mtctr %r10
+
+.Lmemcpy_256_rev_loop:
+        // while counter > 0, copy 256 block.
+        ld %r6,-8(%r4)
+        std %r6,-8(%r3)
+        ld %r7,-16(%r4)
+        std %r7,-16(%r3)
+        ld %r10,-24(%r4)
+        std %r10,-24(%r3)
+        ld %r11,-32(%r4)
+        std %r11,-32(%r3)
+
+        // decrement data addresses.
+        subi %r4,%r4,32
+        subi %r3,%r3,32
+
+        bdnz .Lmemcpy_256_rev_loop
+
+.Lmemcpy_128_64_32_8_rev:
+        // if data size >= 16, copy by quadword.
         cmpdi %r5,16
-        bt  lt, .Lmisaligned_64_32_8_rev
+        bt  lt, .Lmemcpy_64_32_8_rev
 
-.Lmisaligned_128_rev:
+.Lmemcpy_128_rev:
         // copy by quadword.
         srdi %r10,%r5,4
         clrldi %r5,%r5,60
         mtctr %r10
 
-.Lmisaligned_128_rev_loop:
+.Lmemcpy_128_rev_loop:
         // while counter > 0, copy quadword.
-        ld %r7,-16(%r8)
-        std %r7,-16(%r9)
-        ld %r6,-8(%r8)
-        std %r6,-8(%r9)
+        ld %r6,-8(%r4)
+        std %r6,-8(%r3)
+        ld %r7,-16(%r4)
+        std %r7,-16(%r3)
 
-        // decrement variable addresses.
-        subi %r8,%r8,16
-        subi %r9,%r9,16
+        // decrement data addresses.
+        subi %r4,%r4,16
+        subi %r3,%r3,16
 
-        bdnz .Lmisaligned_128_rev_loop
+        bdnz .Lmemcpy_128_rev_loop
 
-.Lmisaligned_64_32_8_rev:
-        // if variable size >= 8, copy by double word.
+.Lmemcpy_64_32_8_rev:
+        // if data size >= 8, copy by double word.
         cmpdi %r5,8
-        bt  lt,.Lmisaligned_32_8_rev
+        bt  lt,.Lmemcpy_32_8_rev
 
-.Lmisaligned_64_rev:
+.Lmemcpy_64_rev:
         // copy by double word.
         srdi %r10,%r5,3
         clrldi %r5,%r5,61
         mtctr %r10
 
-.Lmisaligned_64_rev_loop:
+.Lmemcpy_64_rev_loop:
         // while counter > 0, copy word.
-        ld %r6,-8(%r8)
-        std %r6,-8(%r9)
+        ld %r6,-8(%r4)
+        std %r6,-8(%r3)
 
-        // decrement variable addresses.
-        subi %r8,%r8,8
-        subi %r9,%r9,8
+        // decrement data addresses.
+        subi %r4,%r4,8
+        subi %r3,%r3,8
 
-        bdnz .Lmisaligned_64_rev_loop
+        bdnz .Lmemcpy_64_rev_loop
 
-.Lmisaligned_32_8_rev:
-        // if variable size >= 4, copy by word.
+.Lmemcpy_32_8_rev:
+        // if data size >= 4, copy by word.
         cmpdi %r5,4
-        bt  lt, .Lmisaligned_8_rev
+        bt  lt, .Lmemcpy_8_rev
 
-.Lmisaligned_32_rev:
+.Lmemcpy_32_rev:
         // copy word.
         srdi %r10,%r5,2
         clrldi %r5,%r5,62
         mtctr %r10
 
-.Lmisaligned_32_rev_loop:
+.Lmemcpy_32_rev_loop:
         // while counter > 0, copy word.
-        lwz %r6,-4(%r8)
-        stw %r6,-4(%r9)
+        lwz %r6,-4(%r4)
+        stw %r6,-4(%r3)
 
-        // decrement variable addresses.
-        subi  %r8,%r8,4
-        subi  %r9,%r9,4
+        // decrement data addresses.
+        subi  %r4,%r4,4
+        subi  %r3,%r3,4
 
-        bdnz .Lmisaligned_32_rev_loop
+        bdnz .Lmemcpy_32_rev_loop
 
-.Lmisaligned_8_rev:
-        // if variable size <= 0, finished copying.
+.Lmemcpy_8_rev:
+        // if data size <= 0, finished copying.
         cmpdi %r5,1
-        bt  lt, .Lmisaligned_end
+        bt  lt, .Lmemcpy_end
         mtctr %r5
 
-.Lmisaligned_8_rev_loop:
+.Lmemcpy_8_rev_loop:
         // while counter > 0, copy byte.
         // copy byte.
-        lbz %r6,-1(%r8)
-        stb %r6,-1(%r9)
+        lbz %r6,-1(%r4)
+        stb %r6,-1(%r3)
 
-        // decrement variable addresses.
-        subi  %r8,%r8,1
-        subi  %r9,%r9,1
+        // decrement data addresses.
+        subi  %r4,%r4,1
+        subi  %r3,%r3,1
 
-        bdnz  .Lmisaligned_8_rev_loop
+        bdnz  .Lmemcpy_8_rev_loop
 
-.Lmisaligned_end:
-        // finished copying.
+.Lmemcpy_end:
+        // finished copying. 
+
+#if !defined(MEMCOPY) && !defined(MEMMOVE)
+        ld      %r3, -136(%r1)                                  // restore dst
+#endif
         blr
 
 #ifdef MEMCOPY

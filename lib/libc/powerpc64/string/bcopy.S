@@ -34,6 +34,9 @@ __FBSDID("$FreeBSD$");
 	RCSID("$NetBSD: bcopy.S,v 1.0 2018/03/22 13:37:42 lffpires Exp $")
 #endif
 
+// CPU version definitions
+#include <machine/spr.h>
+
 #define BCOPY_MULTI_ALIGNMENT_BYTES 16
 #define BCOPY_MULTI_ALIGNMENT_MASK (BCOPY_MULTI_ALIGNMENT_BYTES - 1)
 #define BCOPY_MULTI_BLOCK_SIZE_BITS 6
@@ -44,19 +47,22 @@ __FBSDID("$FreeBSD$");
 #define LXVD2X(xt, ra, rb) .long ((31 << 26) | ((xt & 0x1f) << 21) | ((ra & 0x1f) << 16) | ((rb & 0x1f) << 11) | (844 << 1) | ((xt & 0x20) >> 5))
 #define STXVD2X(xs, ra, rb) .long ((31 << 26) | ((xs & 0x1f) << 21) | ((ra & 0x1f) << 16) | ((rb & 0x1f) << 11) | (972 << 1) | ((xs & 0x20) >> 5))
 
+	.globl	HIDENAME(powerpc64_has_vsx)
+
 #ifdef MEMCOPY
 ENTRY(memcpy)
 #else
 #ifdef MEMMOVE
 ENTRY(memmove)
 #else
+	.section	".got","aw"
+	.align 3
+HIDENAME(powerpc64_has_vsx):
+	.llong	-1
+
 ENTRY(bcopy)
 #endif
 #endif
-
-	or.	%r5, %r5, %r5					// len == 0? if so, nothing to do
-	beqlr-	%cr0
-
 	cmpld	%r3, %r4					// src == dst? if so, nothing to do
 	beqlr-	%cr0
 
@@ -69,10 +75,10 @@ ENTRY(bcopy)
 #endif
 
 	cmpldi	%r5, BCOPY_MULTI_BLOCK_COPY_THRESHOLD		// len >= BCOPY_MULTI_BLOCK_COPY_THRESHOLD?
-	bge	%cr0, .Lmulti_phase				// if so, go to multi-phase copy
+	bge	%cr0, .Lmulti_phase				// if so, go to multi-phase
 
 	// set up single-phase copy parameters
-
+.Lsingle_phase_setup:
 	cmpd	%cr0, %r4, %r3					// forward or backward copy?
 	blt	.Lbackward_single_copy
 
@@ -134,6 +140,7 @@ ENTRY(bcopy)
 	ld	%r3, -8(%r1)					// restore dst
 #endif
 	blr
+
 
 .Lmulti_phase:
 	// set up multi-phase copy parameters
@@ -207,9 +214,43 @@ ENTRY(bcopy)
 	cmpldi	%r6, 0						// %r6 == 0? (if so, nothing to copy in phase 2)
 	beq	%cr0, .Lphase3
 
+	// check for VSX support
+	ld	%r6, HIDENAME(powerpc64_has_vsx)@toc(%r2)
+	cmpdi	%r6, 0
+	bgt+	.Lphase2_vsx					// has VSX support
+	beq+	.Lphase2_no_vsx					// no VSX support
+
+	// the detection code was not run before. run it now
+
+	mfpvr	%r6						// load processor version register
+	srdi	%r6, %r6, 16					// we're only interested in the version
+
+	cmpdi	%r6, IBMPOWER7
+	beq	.Lphase2_vsx_check_has_vsx
+	cmpdi	%r6, IBMPOWER7PLUS
+	beq	.Lphase2_vsx_check_has_vsx
+	cmpdi	%r6, IBMPOWER8
+	beq	.Lphase2_vsx_check_has_vsx
+	cmpdi	%r6, IBMPOWER8E
+	beq	.Lphase2_vsx_check_has_vsx
+	cmpdi	%r6, IBMPOWER9
+	beq	.Lphase2_vsx_check_has_vsx
+
+	// no VSX support
+	li	%r6, 0
+	std	%r6, HIDENAME(powerpc64_has_vsx)@toc(%r2)
+	b	.Lphase2_no_vsx
+
+.Lphase2_vsx_check_has_vsx:
+	// VSX is supported
+	li	%r6, 1
+	std	%r6, HIDENAME(powerpc64_has_vsx)@toc(%r2)
+
+.Lphase2_vsx:
+	ld	%r6, -40(%r1)					// number of BLOCKS to copy in phase 2
 	mtctr	%r6
 	.align 5
-.Lphase2_loop:
+.Lphase2_vsx_loop:
 	LXVD2X(6, 7, 4)						// lxvd2x  %vs6, %r7, %r4
 	LXVD2X(7, 8, 4)						// lxvd2x  %vs7, %r8, %r4
 	LXVD2X(8, 9, 4)						// lxvd2x  %vs8, %r9, %r4
@@ -224,9 +265,70 @@ ENTRY(bcopy)
 
 	// done using %r5. from now on we can reuse it freely
 
-	bdnz	.Lphase2_loop
+	bdnz	.Lphase2_vsx_loop
 
 .Lphase3:
+	// load registers for transitioning into the single-phase logic
+	ld	%r5, -48(%r1)					// number of bytes to copy in phase 3
+	ld	%r8, -16(%r1)					// increment for single phase 16-byte
+	ld	%r9, -24(%r1)					// pre/post adjustment for single phase 16-byte
+	b	.Lsingle_phase
+
+.Lphase2_no_vsx:
+	// save registers
+	std	%r14, -56(%r1)
+	std	%r15, -64(%r1)
+	std	%r16, -72(%r1)
+	std	%r17, -80(%r1)
+	std	%r18, -88(%r1)
+	std	%r19, -96(%r1)
+	std	%r20, -104(%r1)
+	std	%r21, -112(%r1)
+
+	addi	%r18, %r7, 8
+	addi	%r19, %r8, 8
+	addi	%r20, %r9, 8
+	addi	%r21, %r10, 8
+
+	ld	%r6, -40(%r1)					// number of BLOCKS to copy in phase 2
+	mtctr	%r6
+	.align 5
+.Lphase2_no_vsx_loop:
+	ldx	%r14, %r7, %r4
+	ldx	%r15, %r18, %r4
+	ldx	%r16, %r8, %r4
+	ldx	%r17, %r19, %r4
+	stdx	%r14, %r7, %r3
+	stdx	%r15, %r18, %r3
+	stdx	%r16, %r8, %r3
+	stdx	%r17, %r19, %r3
+
+	ldx	%r14, %r9, %r4
+	ldx	%r15, %r20, %r4
+	ldx	%r16, %r10, %r4
+	ldx	%r17, %r21, %r4
+	stdx	%r14, %r9, %r3
+	stdx	%r15, %r20, %r3
+	stdx	%r16, %r10, %r3
+	stdx	%r17, %r21, %r3
+
+	add	%r4, %r4, %r5					// phase 2 increment
+	add	%r3, %r3, %r5					// phase 2 increment
+
+	// done using %r5. from now on we can reuse it freely
+
+	bdnz	.Lphase2_no_vsx_loop
+
+	// restore registers
+	ld	%r14, -56(%r1)
+	ld	%r15, -64(%r1)
+	ld	%r16, -72(%r1)
+	ld	%r17, -80(%r1)
+	ld	%r18, -88(%r1)
+	ld	%r19, -96(%r1)
+	ld	%r20, -104(%r1)
+	ld	%r21, -112(%r1)
+
 	// load registers for transitioning into the single-phase logic
 	ld	%r5, -48(%r1)					// number of bytes to copy in phase 3
 	ld	%r8, -16(%r1)					// increment for single phase 16-byte

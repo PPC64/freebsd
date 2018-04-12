@@ -166,7 +166,6 @@ struct iflib_ctx {
 	struct mtx ifc_mtx;
 
 	uint16_t ifc_nhwtxqs;
-	uint16_t ifc_nhwrxqs;
 
 	iflib_txq_t ifc_txqs;
 	iflib_rxq_t ifc_rxqs;
@@ -1177,7 +1176,7 @@ iflib_netmap_txq_init(if_ctx_t ctx, iflib_txq_t txq)
 		 * netmap_idx_n2k() maps a nic index, i, into the corresponding
 		 * netmap slot index, si
 		 */
-		int si = netmap_idx_n2k(&na->tx_rings[txq->ift_id], i);
+		int si = netmap_idx_n2k(na->tx_rings[txq->ift_id], i);
 		netmap_load_map(na, txq->ift_desc_tag, txq->ift_sds.ifsd_map[i], NMB(na, slot + si));
 	}
 }
@@ -1186,7 +1185,7 @@ static void
 iflib_netmap_rxq_init(if_ctx_t ctx, iflib_rxq_t rxq)
 {
 	struct netmap_adapter *na = NA(ctx->ifc_ifp);
-	struct netmap_kring *kring = &na->rx_rings[rxq->ifr_id];
+	struct netmap_kring *kring = na->rx_rings[rxq->ifr_id];
 	struct netmap_slot *slot;
 	uint32_t nm_i;
 
@@ -2289,7 +2288,7 @@ iflib_stop(if_ctx_t ctx)
 	for (i = 0; i < scctx->isc_nrxqsets; i++, rxq++) {
 		/* make sure all transmitters have completed before proceeding XXX */
 
-		for (j = 0, di = txq->ift_ifdi; j < ctx->ifc_nhwrxqs; j++, di++)
+		for (j = 0, di = rxq->ifr_ifdi; j < rxq->ifr_nfl; j++, di++)
 			bzero((void *)di->idi_vaddr, di->idi_size);
 		/* also resets the free lists pidx/cidx */
 		for (j = 0, fl = rxq->ifr_fl; j < rxq->ifr_nfl; j++, fl++)
@@ -2450,7 +2449,7 @@ iflib_rxd_pkt_get(iflib_rxq_t rxq, if_rxd_info_t ri)
 
 	/* should I merge this back in now that the two paths are basically duplicated? */
 	if (ri->iri_nfrags == 1 &&
-	    ri->iri_frags[0].irf_len <= IFLIB_RX_COPY_THRESH) {
+	    ri->iri_frags[0].irf_len <= MIN(IFLIB_RX_COPY_THRESH, MHLEN)) {
 		rxd_frag_to_sd(rxq, &ri->iri_frags[0], FALSE, &sd);
 		m = *sd.ifsd_m;
 		*sd.ifsd_m = NULL;
@@ -3984,7 +3983,7 @@ iflib_if_ioctl(if_t ifp, u_long command, caddr_t data)
 	{
 		struct ifi2creq i2c;
 
-		err = copyin(ifr->ifr_data, &i2c, sizeof(i2c));
+		err = copyin(ifr_data_get_ptr(ifr), &i2c, sizeof(i2c));
 		if (err != 0)
 			break;
 		if (i2c.dev_addr != 0xA0 && i2c.dev_addr != 0xA2) {
@@ -3997,7 +3996,8 @@ iflib_if_ioctl(if_t ifp, u_long command, caddr_t data)
 		}
 
 		if ((err = IFDI_I2C_REQ(ctx, &i2c)) == 0)
-			err = copyout(&i2c, ifr->ifr_data, sizeof(i2c));
+			err = copyout(&i2c, ifr_data_get_ptr(ifr),
+			    sizeof(i2c));
 		break;
 	}
 	case SIOCSIFCAP:
@@ -4197,6 +4197,7 @@ iflib_device_register(device_t dev, void *sc, if_shared_ctx_t sctx, if_ctx_t *ct
 
 	scctx = &ctx->ifc_softc_ctx;
 	ifp = ctx->ifc_ifp;
+	ctx->ifc_nhwtxqs = sctx->isc_ntxqs;
 
 	/*
 	 * XXX sanity check that ntxd & nrxd are a power of 2

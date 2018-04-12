@@ -1095,7 +1095,9 @@ tcp_usr_abort(struct socket *so)
 	    !(inp->inp_flags & INP_DROPPED)) {
 		tp = intotcpcb(inp);
 		TCPDEBUG1();
-		tcp_drop(tp, ECONNABORTED);
+		tp = tcp_drop(tp, ECONNABORTED);
+		if (tp == NULL)
+			goto dropped;
 		TCPDEBUG2(PRU_ABORT);
 		TCP_PROBE2(debug__user, tp, PRU_ABORT);
 	}
@@ -1106,6 +1108,7 @@ tcp_usr_abort(struct socket *so)
 		inp->inp_flags |= INP_SOCKREF;
 	}
 	INP_WUNLOCK(inp);
+dropped:
 	INP_INFO_RUNLOCK(&V_tcbinfo);
 }
 
@@ -1393,11 +1396,15 @@ tcp_fill_info(struct tcpcb *tp, struct tcp_info *ti)
 	ti->tcpi_snd_nxt = tp->snd_nxt;
 	ti->tcpi_snd_mss = tp->t_maxseg;
 	ti->tcpi_rcv_mss = tp->t_maxseg;
-	if (tp->t_flags & TF_TOE)
-		ti->tcpi_options |= TCPI_OPT_TOE;
 	ti->tcpi_snd_rexmitpack = tp->t_sndrexmitpack;
 	ti->tcpi_rcv_ooopack = tp->t_rcvoopack;
 	ti->tcpi_snd_zerowin = tp->t_sndzerowin;
+#ifdef TCP_OFFLOAD
+	if (tp->t_flags & TF_TOE) {
+		ti->tcpi_options |= TCPI_OPT_TOE;
+		tcp_offload_tcp_info(tp, ti);
+	}
+#endif
 }
 
 /*
@@ -1529,7 +1536,9 @@ tcp_ctloutput(struct socket *so, struct sockopt *sopt)
 		return (error);
 	} else if ((sopt->sopt_dir == SOPT_GET) && 
 	    (sopt->sopt_name == TCP_FUNCTION_BLK)) {
-		strcpy(fsn.function_set_name, tp->t_fb->tfb_tcp_block_name);
+		strncpy(fsn.function_set_name, tp->t_fb->tfb_tcp_block_name,
+		    TCP_FUNCTION_NAME_LEN_MAX);
+		fsn.function_set_name[TCP_FUNCTION_NAME_LEN_MAX - 1] = '\0';
 		fsn.pcbcnt = tp->t_fb->tfb_refcnt;
 		INP_WUNLOCK(inp);
 		error = sooptcopyout(sopt, &fsn, sizeof fsn);
@@ -1837,6 +1846,7 @@ unlock_and_done:
 			goto unlock_and_done;
 		}
 
+#ifdef TCP_BLACKBOX
 		case TCP_LOG:
 			INP_WUNLOCK(inp);
 			error = sooptcopyin(sopt, &optval, sizeof optval,
@@ -1885,6 +1895,7 @@ unlock_and_done:
 				 */
 			}
 			break;
+#endif
 
 		default:
 			INP_WUNLOCK(inp);
@@ -1971,6 +1982,7 @@ unlock_and_done:
 			INP_WUNLOCK(inp);
 			error = sooptcopyout(sopt, &optval, sizeof optval);
 			break;
+#ifdef TCP_BLACKBOX
 		case TCP_LOG:
 			optval = tp->t_logstate;
 			INP_WUNLOCK(inp);
@@ -1990,6 +2002,7 @@ unlock_and_done:
 			INP_WUNLOCK(inp);
 			error = EINVAL;
 			break;
+#endif
 		default:
 			INP_WUNLOCK(inp);
 			error = ENOPROTOOPT;

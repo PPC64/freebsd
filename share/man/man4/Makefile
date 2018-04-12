@@ -170,7 +170,6 @@ MAN=	aac.4 \
 	ffclock.4 \
 	filemon.4 \
 	firewire.4 \
-	fpa.4 \
 	full.4 \
 	fwe.4 \
 	fwip.4 \
@@ -402,6 +401,7 @@ MAN=	aac.4 \
 	${_nvram2env.4} \
 	${_nxge.4} \
 	oce.4 \
+	ocs_fc.4\
 	ohci.4 \
 	orm.4 \
 	ow.4 \

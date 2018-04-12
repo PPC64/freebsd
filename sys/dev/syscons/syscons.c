@@ -34,7 +34,6 @@
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
-#include "opt_compat.h"
 #include "opt_syscons.h"
 #include "opt_splash.h"
 #include "opt_ddb.h"
@@ -3858,28 +3857,22 @@ next_code:
 
 	    case RBT:
 #ifndef SC_DISABLE_REBOOT
-		if (enable_reboot && !(flags & SCGETC_CN)) {
-			mtx_unlock(&Giant);
+		if (enable_reboot && !(flags & SCGETC_CN))
 			shutdown_nice(0);
-		}
 #endif
 		break;
 
 	    case HALT:
 #ifndef SC_DISABLE_REBOOT
-		if (enable_reboot && !(flags & SCGETC_CN)) {
-			mtx_unlock(&Giant);
+		if (enable_reboot && !(flags & SCGETC_CN))
 			shutdown_nice(RB_HALT);
-		}
 #endif
 		break;
 
 	    case PDWN:
 #ifndef SC_DISABLE_REBOOT
-		if (enable_reboot && !(flags & SCGETC_CN)) {
-			mtx_unlock(&Giant);
+		if (enable_reboot && !(flags & SCGETC_CN))
 			shutdown_nice(RB_HALT|RB_POWEROFF);
-		}
 #endif
 		break;
 

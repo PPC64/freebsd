@@ -37,12 +37,14 @@ __FBSDID("$FreeBSD$");
 // CPU version definitions
 #include <machine/spr.h>
 
-#define BCOPY_MULTI_ALIGNMENT_BYTES 16
-#define BCOPY_MULTI_ALIGNMENT_MASK (BCOPY_MULTI_ALIGNMENT_BYTES - 1)
-#define BCOPY_MULTI_BLOCK_SIZE_BITS 6
-#define BCOPY_MULTI_BLOCK_SIZE (1 << BCOPY_MULTI_BLOCK_SIZE_BITS)
-#define BCOPY_MULTI_BLOCK_SIZE_MASK (BCOPY_MULTI_BLOCK_SIZE - 1)
-#define BCOPY_MULTI_BLOCK_COPY_THRESHOLD 512
+#define BCOPY_ALIGNMENT_BYTES 16
+#define BCOPY_ALIGNMENT_MASK (BCOPY_ALIGNMENT_BYTES - 1)
+
+#define BCOPY_BLOCK_SIZE_BITS 6
+#define BCOPY_BLOCK_SIZE (1 << BCOPY_BLOCK_SIZE_BITS)
+#define BCOPY_BLOCK_SIZE_MASK (BCOPY_BLOCK_SIZE - 1)
+
+#define BCOPY_BLOCK_COPY_THRESHOLD 512
 
 #define LXVD2X(xt, ra, rb) .long ((31 << 26) | ((xt & 0x1f) << 21) | ((ra & 0x1f) << 16) | ((rb & 0x1f) << 11) | (844 << 1) | ((xt & 0x20) >> 5))
 #define STXVD2X(xs, ra, rb) .long ((31 << 26) | ((xs & 0x1f) << 21) | ((ra & 0x1f) << 16) | ((rb & 0x1f) << 11) | (972 << 1) | ((xs & 0x20) >> 5))
@@ -74,7 +76,7 @@ ENTRY(bcopy)
 	mr	%r4, %r6
 #endif
 
-	cmpldi	%r5, BCOPY_MULTI_BLOCK_COPY_THRESHOLD		// len >= BCOPY_MULTI_BLOCK_COPY_THRESHOLD?
+	cmpldi	%r5, BCOPY_BLOCK_COPY_THRESHOLD			// len >= BCOPY_BLOCK_COPY_THRESHOLD?
 	bge	%cr0, .Lmulti_phase				// if so, go to multi-phase
 
 	// set up single-phase copy parameters
@@ -144,13 +146,13 @@ ENTRY(bcopy)
 
 .Lmulti_phase:
 	// set up multi-phase copy parameters
-	andi.	%r6, %r4, BCOPY_MULTI_ALIGNMENT_MASK
+	andi.	%r6, %r4, BCOPY_ALIGNMENT_MASK
 
-	subfic	%r7, %r6, BCOPY_MULTI_ALIGNMENT_BYTES
-	andi.	%r7, %r7, BCOPY_MULTI_ALIGNMENT_MASK		// %r7 = bytes before the aligned section of the buffer
+	subfic	%r7, %r6, BCOPY_ALIGNMENT_BYTES
+	andi.	%r7, %r7, BCOPY_ALIGNMENT_MASK			// %r7 = bytes before the aligned section of the buffer
 	sub	%r8, %r5, %r7					// %r8 = number of bytes in and after the aligned section of the buffer
-	andi.	%r9, %r8, BCOPY_MULTI_BLOCK_SIZE_MASK		// %r9 = number of bytes after the aligned section of the buffer
-	srdi	%r10, %r8, BCOPY_MULTI_BLOCK_SIZE_BITS		// %r10 = number of BLOCKS in the aligned section of the buffer
+	andi.	%r9, %r8, BCOPY_BLOCK_SIZE_MASK			// %r9 = number of bytes after the aligned section of the buffer
+	srdi	%r10, %r8, BCOPY_BLOCK_SIZE_BITS		// %r10 = number of BLOCKS in the aligned section of the buffer
 
 	cmpd	%cr0, %r4, %r3					// forward or backward copy?
 	blt	.Lbackward_multi_copy
@@ -161,7 +163,7 @@ ENTRY(bcopy)
 	std	%r10, -40(%r1)					// number of BLOCKS to copy in phase 2
 
 	li	%r0, 1						// increment for phases 1 and 3
-	li	%r5, BCOPY_MULTI_BLOCK_SIZE			// increment for phase 2
+	li	%r5, BCOPY_BLOCK_SIZE				// increment for phase 2
 
 	li	%r7, 0						// offset for op 1 of phase 2
 	li	%r8, 16						// offset for op 2 of phase 2
@@ -183,7 +185,7 @@ ENTRY(bcopy)
 	add	%r6, %r5, %r0					// %r6 = len - 1
 	add	%r3, %r3, %r6					// advance to the last position in dst
 	add	%r4, %r4, %r6					// advance to the last position in src
-	li	%r5, -BCOPY_MULTI_BLOCK_SIZE			// increment for phase 2
+	li	%r5, -BCOPY_BLOCK_SIZE				// increment for phase 2
 
 	li	%r7, -15					// offset for op 1 of phase 2
 	li	%r8, -31					// offset for op 2 of phase 2
@@ -214,7 +216,7 @@ ENTRY(bcopy)
 	cmpldi	%r6, 0						// %r6 == 0? (if so, nothing to copy in phase 2)
 	beq	%cr0, .Lphase3
 
-	// check for VSX support
+	// check for VSX support. Should be replaced by ifunc once it becomes available
 	ld	%r6, HIDENAME(powerpc64_has_vsx)@toc(%r2)
 	cmpdi	%r6, 0
 	bgt+	.Lphase2_vsx					// has VSX support

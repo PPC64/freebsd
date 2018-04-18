@@ -34,77 +34,150 @@ __FBSDID("$FreeBSD$");
 ENTRY(strcmp)
 
 .Lstrcmp_loop:
-        // while %r5 != %r6 or %r5 != 0, load chars.
+        ld %r5,0(%r3)
+        ld %r6,0(%r4)
+        cmpd  %r5,%r6
+        bne .Lstrcmp_check_differences
 
+.Lstrcmp_check_zeros:
         // 1st byte.
         lbz %r5,0(%r3)
-        lbz %r6,0(%r4)
         cmpdi %r5,0
-        beq .Lstrcmp_end
-        cmpd  %r5,%r6
-        bne .Lstrcmp_end
+        beq .Lstrcmp_found_zero_in_0
 
-        // 2st byte.
+        // 2nd byte.
         lbz %r5,1(%r3)
-        lbz %r6,1(%r4)
         cmpdi %r5,0
-        beq .Lstrcmp_end
-        cmpd  %r5,%r6
-        bne .Lstrcmp_end
+        beq .Lstrcmp_found_zero_in_1
 
         // 3rd byte.
         lbz %r5,2(%r3)
-        lbz %r6,2(%r4)
         cmpdi %r5,0
-        beq .Lstrcmp_end
-        cmpd  %r5,%r6
-        bne .Lstrcmp_end
+        beq .Lstrcmp_found_zero_in_2
 
         // 4th byte.
         lbz %r5,3(%r3)
-        lbz %r6,3(%r4)
         cmpdi %r5,0
-        beq .Lstrcmp_end
-        cmpd  %r5,%r6
-        bne .Lstrcmp_end
+        beq .Lstrcmp_found_zero_in_3
 
         // 5th byte.
         lbz %r5,4(%r3)
-        lbz %r6,4(%r4)
         cmpdi %r5,0
-        beq .Lstrcmp_end
-        cmpd  %r5,%r6
-        bne .Lstrcmp_end
+        beq .Lstrcmp_found_zero_in_4
 
         // 6th byte.
         lbz %r5,5(%r3)
-        lbz %r6,5(%r4)
         cmpdi %r5,0
-        beq .Lstrcmp_end
-        cmpd  %r5,%r6
-        bne .Lstrcmp_end
+        beq .Lstrcmp_found_zero_in_5
 
         // 7th byte.
         lbz %r5,6(%r3)
-        lbz %r6,6(%r4)
         cmpdi %r5,0
-        beq .Lstrcmp_end
-        cmpd  %r5,%r6
-        bne .Lstrcmp_end
+        beq .Lstrcmp_found_zero_in_6
 
         // 8th byte.
         lbz %r5,7(%r3)
-        lbz %r6,7(%r4)
         cmpdi %r5,0
-        beq .Lstrcmp_end
-        cmpd  %r5,%r6
-        bne .Lstrcmp_end
+        beq .Lstrcmp_found_zero_in_7
 
         // increment data addresses.
         addi  %r3,%r3,8
         addi  %r4,%r4,8
 
         b .Lstrcmp_loop
+
+.Lstrcmp_found_zero_in_0:
+        lbz %r6,0(%r4)
+        b .Lstrcmp_end
+
+.Lstrcmp_found_zero_in_1:
+        lbz %r6,1(%r4)
+        b .Lstrcmp_end
+
+.Lstrcmp_found_zero_in_2:
+        lbz %r6,2(%r4)
+        b .Lstrcmp_end
+
+.Lstrcmp_found_zero_in_3:
+        lbz %r6,3(%r4)
+        b .Lstrcmp_end
+
+.Lstrcmp_found_zero_in_4:
+        lbz %r6,4(%r4)
+        b .Lstrcmp_end
+
+.Lstrcmp_found_zero_in_5:
+        lbz %r6,5(%r4)
+        b .Lstrcmp_end
+
+.Lstrcmp_found_zero_in_6:
+        lbz %r6,6(%r4)
+        b .Lstrcmp_end
+
+.Lstrcmp_found_zero_in_7:
+        lbz %r6,7(%r4)
+        b .Lstrcmp_end
+
+.Lstrcmp_check_differences:
+        // 1st byte.
+        lbz %r5,0(%r3)
+        lbz %r6,0(%r4)
+        cmpd  %r5,%r6
+        bne .Lstrcmp_end
+        cmpdi %r5,0
+        beq .Lstrcmp_end
+
+        // 2st byte.
+        lbz %r5,1(%r3)
+        lbz %r6,1(%r4)
+        cmpd  %r5,%r6
+        bne .Lstrcmp_end
+        cmpdi %r5,0
+        beq .Lstrcmp_end
+
+        // 3rd byte.
+        lbz %r5,2(%r3)
+        lbz %r6,2(%r4)
+        cmpd  %r5,%r6
+        bne .Lstrcmp_end
+        cmpdi %r5,0
+        beq .Lstrcmp_end
+
+        // 4th byte.
+        lbz %r5,3(%r3)
+        lbz %r6,3(%r4)
+        cmpd  %r5,%r6
+        bne .Lstrcmp_end
+        cmpdi %r5,0
+        beq .Lstrcmp_end
+
+        // 5th byte.
+        lbz %r5,4(%r3)
+        lbz %r6,4(%r4)
+        cmpd  %r5,%r6
+        bne .Lstrcmp_end
+        cmpdi %r5,0
+        beq .Lstrcmp_end
+
+        // 6th byte.
+        lbz %r5,5(%r3)
+        lbz %r6,5(%r4)
+        cmpd  %r5,%r6
+        bne .Lstrcmp_end
+        cmpdi %r5,0
+        beq .Lstrcmp_end
+
+        // 7th byte.
+        lbz %r5,6(%r3)
+        lbz %r6,6(%r4)
+        cmpd  %r5,%r6
+        bne .Lstrcmp_end
+        cmpdi %r5,0
+        beq .Lstrcmp_end
+
+        // 8th byte.
+        lbz %r5,7(%r3)
+        lbz %r6,7(%r4)
 
 .Lstrcmp_end:
         // finished checking chars.

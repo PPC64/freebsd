@@ -64,7 +64,7 @@ __FBSDID("$FreeBSD$");
 
 ENTRY(BCOPY_FUNCTION_NAME)
 	cmpld	%r3, %r4					/* src == dst? if so, nothing to do */
-	beqlr-	%cr0
+	beqlr-
 
 #if defined(MEMCOPY) || defined(MEMMOVE)
 	std	%r3, -8(%r1)					/* save dst */
@@ -75,11 +75,11 @@ ENTRY(BCOPY_FUNCTION_NAME)
 #endif
 
 	cmpldi	%r5, BCOPY_BLOCK_COPY_THRESHOLD			/* len >= BCOPY_BLOCK_COPY_THRESHOLD? */
-	bge	%cr0, .Lmulti_phase				/* if so, go to multi-phase */
+	bge	.Lmulti_phase					/* if so, go to multi-phase */
 
 	/* set up single-phase copy parameters */
 .Lsingle_phase_setup:
-	cmpd	%cr0, %r4, %r3					/* forward or backward copy? */
+	cmpd	%r4, %r3					/* forward or backward copy? */
 	blt	.Lbackward_single_copy
 
 	/* forward copy */
@@ -152,7 +152,7 @@ ENTRY(BCOPY_FUNCTION_NAME)
 	andi.	%r9, %r8, BCOPY_BLOCK_SIZE_MASK			/* %r9 = number of bytes after the aligned section of the buffer */
 	srdi	%r10, %r8, BCOPY_BLOCK_SIZE_BITS		/* %r10 = number of BLOCKS in the aligned section of the buffer */
 
-	cmpd	%cr0, %r4, %r3					/* forward or backward copy? */
+	cmpd	%r4, %r3					/* forward or backward copy? */
 	blt	.Lbackward_multi_copy
 
 	/* set up forward copy parameters */
@@ -197,7 +197,7 @@ ENTRY(BCOPY_FUNCTION_NAME)
 .Lphase1:
 	ld	%r6, -32(%r1)					/* number of bytes to copy in phase 1 */
 	cmpldi	%r6, 0						/* %r6 == 0? (if so, nothing to copy in phase 1) */
-	beq+	%cr0, .Lphase2
+	beq+	.Lphase2
 
 	mtctr	%r6
 	.align 5
@@ -212,7 +212,7 @@ ENTRY(BCOPY_FUNCTION_NAME)
 .Lphase2:
 	ld	%r6, -40(%r1)					/* number of BLOCKS to copy in phase 2 */
 	cmpldi	%r6, 0						/* %r6 == 0? (if so, nothing to copy in phase 2) */
-	beq	%cr0, .Lphase3
+	beq	.Lphase3
 
 #ifdef USE_VSX
 	mtctr	%r6

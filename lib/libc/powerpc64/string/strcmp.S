@@ -34,48 +34,54 @@ __FBSDID("$FreeBSD$");
 ENTRY(strcmp)
 
 .Lstrcmp_loop:
+        // Load double words.
         ld %r5,0(%r3)
         ld %r6,0(%r4)
+
+        // Check if double words contain different chars.
         cmpd  %r5,%r6
         bne .Lstrcmp_check_differences
 
 .Lstrcmp_check_zeros:
-        // 1st byte.
+        // There is no different chars.
+        // Search for \0 in double word.
+
+        // Check 1st byte.
         lbz %r5,0(%r3)
         cmpdi %r5,0
         beq .Lstrcmp_found_zero_in_0
 
-        // 2nd byte.
+        // Check 2nd byte.
         lbz %r5,1(%r3)
         cmpdi %r5,0
         beq .Lstrcmp_found_zero_in_1
 
-        // 3rd byte.
+        // Check 3rd byte.
         lbz %r5,2(%r3)
         cmpdi %r5,0
         beq .Lstrcmp_found_zero_in_2
 
-        // 4th byte.
+        // Check 4th byte.
         lbz %r5,3(%r3)
         cmpdi %r5,0
         beq .Lstrcmp_found_zero_in_3
 
-        // 5th byte.
+        // Check 5th byte.
         lbz %r5,4(%r3)
         cmpdi %r5,0
         beq .Lstrcmp_found_zero_in_4
 
-        // 6th byte.
+        // Check 6th byte.
         lbz %r5,5(%r3)
         cmpdi %r5,0
         beq .Lstrcmp_found_zero_in_5
 
-        // 7th byte.
+        // Check 7th byte.
         lbz %r5,6(%r3)
         cmpdi %r5,0
         beq .Lstrcmp_found_zero_in_6
 
-        // 8th byte.
+        // Check 8th byte.
         lbz %r5,7(%r3)
         cmpdi %r5,0
         beq .Lstrcmp_found_zero_in_7
@@ -119,7 +125,10 @@ ENTRY(strcmp)
         b .Lstrcmp_end
 
 .Lstrcmp_check_differences:
-        // 1st byte.
+        // There is a different char.
+        // Search for different char.
+
+        // Check 1st byte.
         lbz %r5,0(%r3)
         lbz %r6,0(%r4)
         cmpd  %r5,%r6
@@ -127,7 +136,7 @@ ENTRY(strcmp)
         cmpdi %r5,0
         beq .Lstrcmp_end
 
-        // 2st byte.
+        // Check 2st byte.
         lbz %r5,1(%r3)
         lbz %r6,1(%r4)
         cmpd  %r5,%r6
@@ -135,7 +144,7 @@ ENTRY(strcmp)
         cmpdi %r5,0
         beq .Lstrcmp_end
 
-        // 3rd byte.
+        // Check 3rd byte.
         lbz %r5,2(%r3)
         lbz %r6,2(%r4)
         cmpd  %r5,%r6
@@ -143,7 +152,7 @@ ENTRY(strcmp)
         cmpdi %r5,0
         beq .Lstrcmp_end
 
-        // 4th byte.
+        // Check 4th byte.
         lbz %r5,3(%r3)
         lbz %r6,3(%r4)
         cmpd  %r5,%r6
@@ -151,7 +160,7 @@ ENTRY(strcmp)
         cmpdi %r5,0
         beq .Lstrcmp_end
 
-        // 5th byte.
+        // Check 5th byte.
         lbz %r5,4(%r3)
         lbz %r6,4(%r4)
         cmpd  %r5,%r6
@@ -159,7 +168,7 @@ ENTRY(strcmp)
         cmpdi %r5,0
         beq .Lstrcmp_end
 
-        // 6th byte.
+        // Check 6th byte.
         lbz %r5,5(%r3)
         lbz %r6,5(%r4)
         cmpd  %r5,%r6
@@ -167,7 +176,7 @@ ENTRY(strcmp)
         cmpdi %r5,0
         beq .Lstrcmp_end
 
-        // 7th byte.
+        // Check 7th byte.
         lbz %r5,6(%r3)
         lbz %r6,6(%r4)
         cmpd  %r5,%r6
@@ -175,12 +184,14 @@ ENTRY(strcmp)
         cmpdi %r5,0
         beq .Lstrcmp_end
 
-        // 8th byte.
+        // Check 8th byte.
         lbz %r5,7(%r3)
         lbz %r6,7(%r4)
 
 .Lstrcmp_end:
-        // finished checking chars.
+        // Finished checking chars.
+
+        // Compute result.
         sub %r3,%r5,%r6
         blr
 

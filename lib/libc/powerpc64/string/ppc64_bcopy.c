@@ -31,8 +31,9 @@
 __FBSDID("$FreeBSD$");
 
 #include <sys/types.h>
-#include <sys/sysctl.h>
+#include <sys/auxv.h>
 #include <machine/cpu.h>
+#include <machine/atomic.h>
 #include <stdlib.h>
 
 #ifdef MEMCOPY
@@ -59,14 +60,17 @@ void bcopy(const void *src, void *dst, size_t len)
 {
 	/* XXX: all of this should be replaced with ifunc code once it's available */
 	if (bcopy_has_vsx < 0) {
-	        unsigned int cpu_features;
-        	size_t cpu_features_len = sizeof(cpu_features);
+		/*
+		 * Initialize bcopy_has_vsx to 0, at least until elf_aux_info() returns.
+		 * Otherwise, if elf_aux_info() calls bcopy/memcpy/memmove, we would enter an infinite loop.
+		 */
+		if (atomic_cmpset_int(&bcopy_has_vsx, -1, 0) != 0) {
+			u_long hwcap;
 
-	        if (sysctlbyname("hw.cpu_features", &cpu_features, &cpu_features_len, NULL, 0) == 0 &&
-		    (cpu_features & PPC_FEATURE_HAS_VSX) != 0) {
-			bcopy_has_vsx = 1;
-		} else {
-			bcopy_has_vsx = 0;
+			if (elf_aux_info(AT_HWCAP, &hwcap, sizeof(hwcap)) == 0 &&
+			    (hwcap & PPC_FEATURE_HAS_VSX) != 0) {
+				atomic_set_int(&bcopy_has_vsx, 1);
+			}
 		}
 	}
 

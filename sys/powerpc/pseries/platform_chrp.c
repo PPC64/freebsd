@@ -355,7 +355,8 @@ chrp_cpuref_init(void)
 {
 	phandle_t cpu, dev;
 	char buf[32];
-	int a, res;
+	int a, res, res2;
+	uint32_t reg, addr_cells, size_cells;
 	cell_t interrupt_servers[32];
 	uint64_t bsp;
 
@@ -371,26 +372,44 @@ chrp_cpuref_init(void)
 		dev = OF_peer(dev);
 	}
 
+	res = OF_getproplen(dev, "#address-cells");
+	res2 = OF_getproplen(dev, "#size-cells");
+	if (res != res2 || res != sizeof(uint32_t))
+		panic("CPU properties #address-cells and #size-cells not found on Open Firmware\n");
+	OF_getencprop(dev, "#address-cells", &addr_cells, sizeof(addr_cells));
+	OF_getencprop(dev, "#size-cells", &size_cells, sizeof(size_cells));
+	if (addr_cells != 1 || size_cells != 0)
+		panic("Unexpected values for CPU properties #address-cells and #size-cells on Open Firmware\n");
+
 	bsp = 0;
 	for (cpu = OF_child(dev); cpu != 0; cpu = OF_peer(cpu)) {
 		res = OF_getprop(cpu, "device_type", buf, sizeof(buf));
 		if (res > 0 && strcmp(buf, "cpu") == 0) {
 			res = OF_getproplen(cpu, "ibm,ppc-interrupt-server#s");
 			if (res > 0) {
-
-
 				OF_getencprop(cpu, "ibm,ppc-interrupt-server#s",
 				    interrupt_servers, res);
 
+				res2 = OF_getproplen(cpu, "reg");
+				if (res2 != sizeof(uint32_t))
+					panic("Unexpected length for CPU property reg on Open Firmware\n");
+				OF_getencprop(cpu, "reg", &reg, res2);
+				if (reg + res/sizeof(cell_t) > MAXCPU)
+					panic("Invalid CPU ID found on Open Firmware\n");
+
 				for (a = 0; a < res/sizeof(cell_t); a++) {
-					platform_cpuref[platform_cpuref_cnt].cr_hwref = interrupt_servers[a];
-					platform_cpuref[platform_cpuref_cnt].cr_cpuid = platform_cpuref_cnt;
+					platform_cpuref[reg + a].cr_hwref = interrupt_servers[a];
+					platform_cpuref[reg + a].cr_cpuid = reg + a;
 
 					platform_cpuref_cnt++;
 				}
 			}
 		}
 	}
+
+	for (a = 0; a < platform_cpuref_cnt; a++)
+		if (platform_cpuref[a].cr_cpuid != a)
+			panic("Invalid CPU ID found on Open Firmware\n");
 
 	platform_cpuref_valid = 1;
 

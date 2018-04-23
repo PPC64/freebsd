@@ -247,7 +247,6 @@ ENTRY(BCOPY_FUNCTION_NAME)
 	addi	%r20, %r9, 8
 	addi	%r21, %r10, 8
 
-	ld	%r6, -40(%r1)					/* number of BLOCKS to copy in phase 2 */
 	mtctr	%r6
 	.align 5
 .Lphase2_no_vsx_loop:

@@ -34,164 +34,120 @@ __FBSDID("$FreeBSD$");
 ENTRY(strcmp)
 
 .Lstrcmp_loop:
-        // Load double words.
+        /* Load double words. */
         ld %r5,0(%r3)
         ld %r6,0(%r4)
 
-        // Check if double words contain different chars.
-        cmpd  %r5,%r6
-        bne .Lstrcmp_check_differences
+        /* Check if double words are different. */
+        xor %r0,%r5,%r6
 
-.Lstrcmp_check_zeros:
-        // There is no different chars.
-        // Search for \0 in double word.
+        /* Check if double words contain zero. */
+        xor %r8,%r8,%r8
+        cmpb %r9,%r5,%r8
 
-        // Check 1st byte.
-        lbz %r5,0(%r3)
-        cmpdi %r5,0
-        beq .Lstrcmp_found_zero_in_0
+        /*
+         * If double words are different or contain zero,
+         * find what byte is different or contains zero,
+         * else load next double words.
+         */
+        or. %r9,%r9,%r0
+        bne .Lstrcmp_check_zeros_differences
 
-        // Check 2nd byte.
-        lbz %r5,1(%r3)
-        cmpdi %r5,0
-        beq .Lstrcmp_found_zero_in_1
-
-        // Check 3rd byte.
-        lbz %r5,2(%r3)
-        cmpdi %r5,0
-        beq .Lstrcmp_found_zero_in_2
-
-        // Check 4th byte.
-        lbz %r5,3(%r3)
-        cmpdi %r5,0
-        beq .Lstrcmp_found_zero_in_3
-
-        // Check 5th byte.
-        lbz %r5,4(%r3)
-        cmpdi %r5,0
-        beq .Lstrcmp_found_zero_in_4
-
-        // Check 6th byte.
-        lbz %r5,5(%r3)
-        cmpdi %r5,0
-        beq .Lstrcmp_found_zero_in_5
-
-        // Check 7th byte.
-        lbz %r5,6(%r3)
-        cmpdi %r5,0
-        beq .Lstrcmp_found_zero_in_6
-
-        // Check 8th byte.
-        lbz %r5,7(%r3)
-        cmpdi %r5,0
-        beq .Lstrcmp_found_zero_in_7
-
-        // increment data addresses.
+        /* Increment data addresses. */
         addi  %r3,%r3,8
         addi  %r4,%r4,8
-
         b .Lstrcmp_loop
 
-.Lstrcmp_found_zero_in_0:
-        lbz %r6,0(%r4)
-        b .Lstrcmp_end
+.Lstrcmp_check_zeros_differences:
+        /* Find what byte is different or contains zero. */
 
-.Lstrcmp_found_zero_in_1:
-        lbz %r6,1(%r4)
-        b .Lstrcmp_end
+        /* Load masks. */
+        lis %r7,0xff00
+        sldi %r5,%r7,8
+        sldi %r6,%r5,8
+        sldi %r8,%r6,8
+        sldi %r10,%r8,8
 
-.Lstrcmp_found_zero_in_2:
-        lbz %r6,2(%r4)
-        b .Lstrcmp_end
+        /* Check 1st byte. */
+        and. %r0,%r9,%r10
+        bne .Lstrcmp_found_zero_difference_in_1
 
-.Lstrcmp_found_zero_in_3:
-        lbz %r6,3(%r4)
-        b .Lstrcmp_end
+        /* Check 2nd byte. */
+        and. %r0,%r9,%r8
+        bne .Lstrcmp_found_zero_difference_in_2
 
-.Lstrcmp_found_zero_in_4:
-        lbz %r6,4(%r4)
-        b .Lstrcmp_end
+        /* Check 3rd byte. */
+        and. %r0,%r9,%r6
+        bne .Lstrcmp_found_zero_difference_in_3
 
-.Lstrcmp_found_zero_in_5:
-        lbz %r6,5(%r4)
-        b .Lstrcmp_end
+        /* Check 4th byte. */
+        and. %r0,%r9,%r5
+        bne .Lstrcmp_found_zero_difference_in_4
 
-.Lstrcmp_found_zero_in_6:
-        lbz %r6,6(%r4)
-        b .Lstrcmp_end
+        /* Check 5th byte. */
+        and. %r0,%r9,%r7
+        bne .Lstrcmp_found_zero_difference_in_5
 
-.Lstrcmp_found_zero_in_7:
-        lbz %r6,7(%r4)
-        b .Lstrcmp_end
+        /* Check 6th byte. */
+        andis. %r0,%r9,0xff
+        bne .Lstrcmp_found_zero_difference_in_6
 
-.Lstrcmp_check_differences:
-        // There is a different char.
-        // Search for different char.
+        /* Check 7th byte. */
+        andi. %r0,%r9,0xff00
+        bne .Lstrcmp_found_zero_difference_in_7
 
-        // Check 1st byte.
-        lbz %r5,0(%r3)
-        lbz %r6,0(%r4)
-        cmpd  %r5,%r6
-        bne .Lstrcmp_end
-        cmpdi %r5,0
-        beq .Lstrcmp_end
-
-        // Check 2st byte.
-        lbz %r5,1(%r3)
-        lbz %r6,1(%r4)
-        cmpd  %r5,%r6
-        bne .Lstrcmp_end
-        cmpdi %r5,0
-        beq .Lstrcmp_end
-
-        // Check 3rd byte.
-        lbz %r5,2(%r3)
-        lbz %r6,2(%r4)
-        cmpd  %r5,%r6
-        bne .Lstrcmp_end
-        cmpdi %r5,0
-        beq .Lstrcmp_end
-
-        // Check 4th byte.
-        lbz %r5,3(%r3)
-        lbz %r6,3(%r4)
-        cmpd  %r5,%r6
-        bne .Lstrcmp_end
-        cmpdi %r5,0
-        beq .Lstrcmp_end
-
-        // Check 5th byte.
-        lbz %r5,4(%r3)
-        lbz %r6,4(%r4)
-        cmpd  %r5,%r6
-        bne .Lstrcmp_end
-        cmpdi %r5,0
-        beq .Lstrcmp_end
-
-        // Check 6th byte.
-        lbz %r5,5(%r3)
-        lbz %r6,5(%r4)
-        cmpd  %r5,%r6
-        bne .Lstrcmp_end
-        cmpdi %r5,0
-        beq .Lstrcmp_end
-
-        // Check 7th byte.
-        lbz %r5,6(%r3)
-        lbz %r6,6(%r4)
-        cmpd  %r5,%r6
-        bne .Lstrcmp_end
-        cmpdi %r5,0
-        beq .Lstrcmp_end
-
-        // Check 8th byte.
+        /* 8th byte is different or contains zero. */
         lbz %r5,7(%r3)
         lbz %r6,7(%r4)
+        sub %r3,%r5,%r6
+        blr
 
-.Lstrcmp_end:
-        // Finished checking chars.
+.Lstrcmp_found_zero_difference_in_1:
+        /* 1st byte is different or contains zero. */
+        lbz %r5,0(%r3)
+        lbz %r6,0(%r4)
+        sub %r3,%r5,%r6
+        blr
 
-        // Compute result.
+.Lstrcmp_found_zero_difference_in_2:
+        /* 2nd byte is different or contains zero. */
+        lbz %r5,1(%r3)
+        lbz %r6,1(%r4)
+        sub %r3,%r5,%r6
+        blr
+
+.Lstrcmp_found_zero_difference_in_3:
+        /* 3rd byte is different or contains zero. */
+        lbz %r5,2(%r3)
+        lbz %r6,2(%r4)
+        sub %r3,%r5,%r6
+        blr
+
+.Lstrcmp_found_zero_difference_in_4:
+        /* 4th byte is different or contains zero. */
+        lbz %r5,3(%r3)
+        lbz %r6,3(%r4)
+        sub %r3,%r5,%r6
+        blr
+
+.Lstrcmp_found_zero_difference_in_5:
+        /* 5th byte is different or contains zero. */
+        lbz %r5,4(%r3)
+        lbz %r6,4(%r4)
+        sub %r3,%r5,%r6
+        blr
+
+.Lstrcmp_found_zero_difference_in_6:
+        /* 6th byte is different or contains zero. */
+        lbz %r5,5(%r3)
+        lbz %r6,5(%r4)
+        sub %r3,%r5,%r6
+        blr
+
+.Lstrcmp_found_zero_difference_in_7:
+        /* 7th byte is different or contains zero. */
+        lbz %r5,6(%r3)
+        lbz %r6,6(%r4)
         sub %r3,%r5,%r6
         blr
 

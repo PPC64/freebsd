@@ -11,4 +11,7 @@ MDSRCS+= \
 	memcpy.S \
 	memcpy_vsx.S \
 	memmove.S \
-	memmove_vsx.S
+	memmove_vsx.S \
+	strncpy.S \
+	strcmp.S \
+	strcpy.S

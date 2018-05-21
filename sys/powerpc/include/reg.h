@@ -27,6 +27,10 @@ struct vmxreg {
 	uint32_t vscr;
 };
 
+struct vsxreg {
+	uint64_t vshr[32];
+};
+
 struct dbreg {
 	unsigned int	junk;
 };
@@ -48,6 +52,10 @@ struct fpreg32 {
 
 struct vmxreg32 {
 	struct vmxreg data;
+};
+
+struct vsxreg32 {
+	struct vsxreg data;
 };
 
 struct dbreg32 {

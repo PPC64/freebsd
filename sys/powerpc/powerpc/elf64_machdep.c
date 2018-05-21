@@ -49,7 +49,6 @@
 #include <machine/altivec.h>
 #include <machine/cpu.h>
 #include <machine/fpu.h>
-#include <machine/reg.h>
 #include <machine/elf.h>
 #include <machine/md_var.h>
 
@@ -236,7 +235,7 @@ elf64_dump_thread(struct thread *td, void *dst, size_t *off)
 {
 	size_t len;
 	struct pcb *pcb;
-	struct vsxreg vsx;
+	uint64_t vsr[32];
 	uint64_t *vsr_dw1;
 	int vsr_idx;
 
@@ -262,16 +261,16 @@ elf64_dump_thread(struct thread *td, void *dst, size_t *off)
 			 * VSR32-VSR63 overlap with VR0-VR31, so we only copy
 			 * the non-overlapping data, which is doubleword 1 of VSR0-VSR31.
 			 */
-			for (vsr_idx = 0; vsr_idx < nitems(vsx.vshr); vsr_idx++) {
+			for (vsr_idx = 0; vsr_idx < nitems(vsr); vsr_idx++) {
 				vsr_dw1 = (uint64_t *)&pcb->pcb_fpu.fpr[vsr_idx].vsr[2];
-				vsx.vshr[vsr_idx] = *vsr_dw1;
+				vsr[vsr_idx] = *vsr_dw1;
 			}
 			len += elf64_populate_note(NT_PPC_VSX,
-			    &vsx, (char *)dst + len,
-			    sizeof(vsx), NULL);
+			    vsr, (char *)dst + len,
+			    sizeof(vsr), NULL);
 		} else
 			len += elf64_populate_note(NT_PPC_VSX, NULL, NULL,
-			    sizeof(vsx), NULL);
+			    sizeof(vsr), NULL);
 	}
 
 	*off = len;

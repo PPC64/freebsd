@@ -119,6 +119,7 @@ static void *elf_note_x86_xstate(void *, size_t *);
 #endif
 #if defined(__powerpc__)
 static void *elf_note_powerpc_vmx(void *, size_t *);
+static void *elf_note_powerpc_vsx(void *, size_t *);
 #endif
 static void *elf_note_procstat_auxv(void *, size_t *);
 static void *elf_note_procstat_files(void *, size_t *);
@@ -381,6 +382,7 @@ elf_putnotes(pid_t pid, struct sbuf *sb, size_t *sizep)
 #endif
 #if defined(__powerpc__)
 		elf_putnote(NT_PPC_VMX, elf_note_powerpc_vmx, tids + i, sb);
+		elf_putnote(NT_PPC_VSX, elf_note_powerpc_vsx, tids + i, sb);
 #endif
 	}
 
@@ -802,6 +804,30 @@ elf_note_powerpc_vmx(void *arg, size_t *sizep)
 	memcpy(vmx, &info, sizeof(*vmx));
 	*sizep = sizeof(*vmx);
 	return (vmx);
+}
+
+static void *
+elf_note_powerpc_vsx(void *arg, size_t *sizep)
+{
+	lwpid_t tid;
+	struct vsxreg *vsx;
+	static bool has_vsx = true;
+	struct vsxreg info;
+
+	tid = *(lwpid_t *)arg;
+	if (has_vsx) {
+		if (ptrace(PT_GETVSRREGS, tid, (void *)&info,
+		    sizeof(info)) != 0)
+			has_vsx = false;
+	}
+	if (!has_vsx) {
+		*sizep = 0;
+		return (NULL);
+	}
+	vsx = calloc(1, sizeof(*vsx));
+	memcpy(vsx, &info, sizeof(*vsx));
+	*sizep = sizeof(*vsx);
+	return (vsx);
 }
 #endif
 

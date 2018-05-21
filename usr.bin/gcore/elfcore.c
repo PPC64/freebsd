@@ -810,24 +810,24 @@ static void *
 elf_note_powerpc_vsx(void *arg, size_t *sizep)
 {
 	lwpid_t tid;
-	struct vsxreg *vsx;
+	char *vshr_data;
 	static bool has_vsx = true;
-	struct vsxreg info;
+	uint64_t vshr[32];
 
 	tid = *(lwpid_t *)arg;
 	if (has_vsx) {
-		if (ptrace(PT_GETVSRREGS, tid, (void *)&info,
-		    sizeof(info)) != 0)
+		if (ptrace(PT_GETVSRREGS, tid, (void *)vshr,
+		    sizeof(vshr)) != 0)
 			has_vsx = false;
 	}
 	if (!has_vsx) {
 		*sizep = 0;
 		return (NULL);
 	}
-	vsx = calloc(1, sizeof(*vsx));
-	memcpy(vsx, &info, sizeof(*vsx));
-	*sizep = sizeof(*vsx);
-	return (vsx);
+	vshr_data = calloc(1, sizeof(vshr));
+	memcpy(vshr_data, vshr, sizeof(vshr));
+	*sizep = sizeof(vshr);
+	return (vshr_data);
 }
 #endif
 

@@ -172,7 +172,7 @@ elf32_dump_thread(struct thread *td, void *dst, size_t *off)
 {
 	size_t len;
 	struct pcb *pcb;
-	uint64_t vsr[32];
+	uint64_t vshr[32];
 	uint64_t *vsr_dw1;
 	int vsr_idx;
 
@@ -198,16 +198,16 @@ elf32_dump_thread(struct thread *td, void *dst, size_t *off)
 			 * VSR32-VSR63 overlap with VR0-VR31, so we only copy
 			 * the non-overlapping data, which is doubleword 1 of VSR0-VSR31.
 			 */
-			for (vsr_idx = 0; vsr_idx < nitems(vsr); vsr_idx++) {
+			for (vsr_idx = 0; vsr_idx < nitems(vshr); vsr_idx++) {
 				vsr_dw1 = (uint64_t *)&pcb->pcb_fpu.fpr[vsr_idx].vsr[2];
-				vsr[vsr_idx] = *vsr_dw1;
+				vshr[vsr_idx] = *vsr_dw1;
 			}
 			len += elf32_populate_note(NT_PPC_VSX,
-			    vsr, (char *)dst + len,
-			    sizeof(vsr), NULL);
+			    vshr, (char *)dst + len,
+			    sizeof(vshr), NULL);
 		} else
 			len += elf32_populate_note(NT_PPC_VSX, NULL, NULL,
-			    sizeof(vsr), NULL);
+			    sizeof(vshr), NULL);
 	}
 
 	*off = len;

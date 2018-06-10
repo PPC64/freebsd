@@ -194,7 +194,7 @@ vtnet_modern(struct vtnet_softc *sc)
 /*
  * Maximum number of queue pairs we will autoconfigure to.
  */
-#define VTNET_MAX_QUEUE_PAIRS	8
+#define VTNET_MAX_QUEUE_PAIRS	32
 
 /*
  * Additional completed entries can appear in a virtqueue before we can

@@ -128,10 +128,27 @@ TARGET_ABI=	gnueabihf
 TARGET_ABI=	gnueabi
 .endif
 .endif
+
+
+OS_VERSION?=	freebsd13.0
+
+# See https://clang.llvm.org/docs/CrossCompilation.html#target-triple
+MACHINE_VENDOR?=	unknown
 MACHINE_ABI?=	unknown
-MACHINE_TRIPLE?=${MACHINE_ARCH:S/amd64/x86_64/:C/hf$//:S/mipsn32/mips64/}-${MACHINE_ABI}-freebsd13.0
+.if ${MACHINE_ABI} == "unknown"
+MACHINE_TRIPLE?=${MACHINE_ARCH:S/amd64/x86_64/:C/hf$//:S/mipsn32/mips64/}-${MACHINE_VENDOR}-${OS_VERSION}
+.else
+MACHINE_TRIPLE?=${MACHINE_ARCH:S/amd64/x86_64/:C/hf$//:S/mipsn32/mips64/}-${MACHINE_VENDOR}-${OS_VERSION}-${MACHINE_ABI}
+.endif
+
+
+TARGET_VENDOR?=	unknown
 TARGET_ABI?=	unknown
-TARGET_TRIPLE?=	${TARGET_ARCH:S/amd64/x86_64/:C/hf$//:S/mipsn32/mips64/}-${TARGET_ABI}-freebsd13.0
+.if ${TARGET_ABI} == "unknown"
+TARGET_TRIPLE?=	${TARGET_ARCH:S/amd64/x86_64/:C/hf$//:S/mipsn32/mips64/}-${TARGET_VENDOR}-${OS_VERSION}
+.else
+TARGET_TRIPLE?= ${TARGET_ARCH:S/amd64/x86_64/:C/hf$//:S/mipsn32/mips64/}-${TARGET_VENDOR}-${OS_VERSION}-${TARGET_ABI}
+.endif
 KNOWN_ARCHES?=	aarch64/arm64 \
 		amd64 \
 		arm \

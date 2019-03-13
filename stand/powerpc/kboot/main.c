@@ -484,8 +484,15 @@ kboot_kseg_get(int *nseg, void **ptr)
 void
 _start(int argc, const char **argv, char **env)
 {
+// Disable error -Wuninitialized on clang.
+// Shoult it be rewritten in asm?
+#pragma clang diagnostic push 
+#pragma clang diagnostic warning "-Wuninitialized"
+
 	register volatile void **sp asm("r1");
 	main((int)sp[0], (const char **)&sp[1]);
+
+#pragma clang diagnostic pop
 }
 
 /*

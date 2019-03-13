@@ -158,6 +158,11 @@ extern void	*dblow, *dbend;
 extern void	*imisstrap, *imisssize;
 extern void	*dlmisstrap, *dlmisssize;
 extern void	*dsmisstrap, *dsmisssize;
+#ifdef __powerpc64__
+extern void	*cpu_reset_handler;
+extern void	*cpu_wakeup_handler;
+extern void	*power_save_sequence;
+#endif
 
 extern void *ap_pcpu;
 extern void __restartkernel(vm_offset_t, vm_offset_t, vm_offset_t, void *, uint32_t, register_t offset, register_t msr);
@@ -391,6 +396,15 @@ aim_cpu_init(vm_offset_t toc)
 	/* Set TOC base so that the interrupt code can get at it */
 	*((void **)TRAP_GENTRAP) = &generictrap;
 	*((register_t *)TRAP_TOCBASE) = toc;
+	/*
+         * Set up special support function addresses.
+         * These functions do not use C calling conventions,
+	 * they operate on magic addresses in the trap vector.
+	 */
+	*((void **)TRAP_ADDR_CPU_RESET) = &cpu_reset_handler;
+	*((void **)TRAP_ADDR_CPU_WAKEUP) = &cpu_wakeup_handler;
+	*((void **)TRAP_ADDR_POWER_SAVE) = &power_save_sequence;
+
 	#else
 	/* Set branch address for trap code */
 	if (cpu_features & PPC_FEATURE_64)

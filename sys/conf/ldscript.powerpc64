@@ -6,14 +6,17 @@ OUTPUT_ARCH(powerpc:common64)
 ENTRY(__start)
 SEARCH_DIR(/usr/lib);
 PROVIDE (__stack = 0);
+
+/* For loading, we use a simplified ELF structure using a single PT_LOAD section. */
 PHDRS
 {
+	/* Kernel segment contains kernel and data. The actual protections will be applied later. */
 	text PT_LOAD ;
 	dynamic PT_DYNAMIC ;
 }
+
 SECTIONS
 {
-
   /* Low-address wrapper for bootloaders (kexec/kboot) that can't parse ELF */
   . = kernbase - 0x100;
   .kboot : { *(.text.kboot) } :text
@@ -25,6 +28,7 @@ SECTIONS
   .text      :
   {
     *(.glink)
+    *(.text.early)
     *(.text)
     *(.stub)
     /* .gnu.warning sections are handled specially by elf32.em.  */
@@ -97,10 +101,11 @@ SECTIONS
   .toc1      : ALIGN(8) { *(.toc1) }
   .opd       : ALIGN(8) { KEEP (*(.opd)) }
   .branch_lt : ALIGN(8) { *(.branch_lt) }
-  . = ALIGN(4096);
-  .got       : ALIGN(8) { __tocbase = .; *(.got .toc) }
+  . = ALIGN(4096); /* Align to page! */
+  .got       : ALIGN(8) { __tocbase = .; *(.got) }
+  .toc       : ALIGN(8) { *(.toc) }
 
-  .dynamic        : { *(.dynamic) } :text :dynamic
+  .dynamic        : { *(.dynamic) }  :text :dynamic
   /* Put .ctors and .dtors next to the .got2 section, so that the pointers
      get relocated with -mrelocatable. Also put in the .fixup pointers.
      The current compiler no longer needs this, but keep it around for 2.7.2  */

@@ -93,6 +93,9 @@ CFLAGS+= -DLOADER_DISK_SUPPORT
 # or powerpc64.
 .if ${MACHINE_ARCH} == "powerpc64"
 CFLAGS+=	-m32 -mcpu=powerpc
+
+#### temporary workaround!!
+CFLAGS+=       -fuse-ld=/usr/local/powerpc64-unknown-freebsd12.0/bin/ld.bfd 
 .endif
 
 # For amd64, there's a bit of mixed bag. Some of the tree (i386, lib*32) is

@@ -46,6 +46,9 @@ CFLAGS.gcc+= -Wa,-many
 CFLAGS+= -fPIC
 LDFLAGS+= -pie
 
+# Workaround module metadata parsing in bootloader
+LDFLAGS.clang+=	--apply-dynamic-relocs	
+
 .if !empty(DDB_ENABLED)
 CFLAGS+=	-fno-omit-frame-pointer
 .endif

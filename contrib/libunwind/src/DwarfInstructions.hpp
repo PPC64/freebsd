@@ -234,6 +234,21 @@ int DwarfInstructions<A, R>::stepWithDwarf(A &addressSpace, pint_t pc,
       }
 #endif
 
+#if defined(_LIBUNWIND_TARGET_PPC64)
+      // If the instruction at return address is different than nop,
+      // then the TOC (r2) was saved and need to be restored
+      if (R::getArch() == REGISTERS_PPC64 && returnAddress != 0 &&
+          addressSpace.get32(returnAddress) != 0x60000000) {
+        pint_t sp = newRegisters.getRegister(UNW_REG_SP);
+#if defined(_CALL_ELF) && _CALL_ELF == 2
+        pint_t r2 = addressSpace.get64(sp + 24);
+#else
+        pint_t r2 = addressSpace.get64(sp + 40);
+#endif
+        newRegisters.setRegister(UNW_PPC64_R2, r2);
+      }
+#endif
+
       // Return address is address after call site instruction, so setting IP to
       // that does simualates a return.
       newRegisters.setIP(returnAddress);

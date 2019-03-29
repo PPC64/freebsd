@@ -6,9 +6,12 @@ OUTPUT_ARCH(powerpc:common64)
 ENTRY(__start)
 SEARCH_DIR(/usr/lib);
 PROVIDE (__stack = 0);
-
-/* For loading, we use a simplified ELF structure using a single PT_LOAD section. */
 PHDRS
+{
+	text PT_LOAD ;
+	dynamic PT_DYNAMIC ;
+}
+SECTIONS
 {
 	/* Kernel segment contains kernel and data. The actual protections will be applied later. */
 	text PT_LOAD ;
@@ -105,7 +108,7 @@ SECTIONS
   .got       : ALIGN(8) { __tocbase = .; *(.got) }
   .toc       : ALIGN(8) { *(.toc) }
 
-  .dynamic        : { *(.dynamic) }  :text :dynamic
+  .dynamic        : { *(.dynamic) } :text :dynamic
   /* Put .ctors and .dtors next to the .got2 section, so that the pointers
      get relocated with -mrelocatable. Also put in the .fixup pointers.
      The current compiler no longer needs this, but keep it around for 2.7.2  */

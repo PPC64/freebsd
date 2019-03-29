@@ -355,7 +355,7 @@ cpu_reset_handler:
 	GET_TOCBASE(%r2)
 
 	addis	%r1,%r2,TOC_REF(tmpstk)@ha
-	ld	%r1,TOC_REF(tmpstk)@l(%r2)	/* get new SP */
+	ld	%r1,TOC_REF(tmpstk)@l(%r1)	/* get new SP */
 	addi	%r1,%r1,(TMPSTKSZ-48)
 
 	bl	CNAME(cpudep_ap_early_bootstrap) /* Set PCPU */
@@ -391,7 +391,7 @@ cpu_wakeup_handler:
 
 	/* Check for false wake up due to badly SRR1 set (eg. by OPAL) */
 	addis	%r3,%r2,TOC_REF(can_wakeup)@ha
-	ld	%r3,TOC_REF(can_wakeup)@l(%r2)
+	ld	%r3,TOC_REF(can_wakeup)@l(%r3)
 	ld	%r3,0(%r3)
 	cmpdi	%r3,0
 	beq	cpu_reset_handler

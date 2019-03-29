@@ -13,13 +13,6 @@ PHDRS
 }
 SECTIONS
 {
-	/* Kernel segment contains kernel and data. The actual protections will be applied later. */
-	text PT_LOAD ;
-	dynamic PT_DYNAMIC ;
-}
-
-SECTIONS
-{
   /* Low-address wrapper for bootloaders (kexec/kboot) that can't parse ELF */
   . = kernbase - 0x100;
   .kboot : { *(.text.kboot) } :text

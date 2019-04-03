@@ -33,6 +33,7 @@
 
 #include <dev/virtio/virtio_ids.h>
 #include <dev/virtio/virtio_config.h>
+#include <sys/endian.h>
 
 struct vq_alloc_info;
 
@@ -84,13 +85,14 @@ void	 virtio_reinit_complete(device_t dev);
 
 /*
  * Read/write a variable amount from the device specific (ie, network)
- * configuration region. This region is encoded in the same endian as
- * the guest.
+ * configuration region. According to virtio-1.0 section 2.4, this
+ * region uses little-endian format for multi-byte fields
  */
 void	 virtio_read_device_config(device_t dev, bus_size_t offset,
 	     void *dst, int length);
 void	 virtio_write_device_config(device_t dev, bus_size_t offset,
 	     void *src, int length);
+
 
 /* Inlined device specific read/write functions for common lengths. */
 #define VIRTIO_RDWR_DEVICE_CONFIG(size, type)				\

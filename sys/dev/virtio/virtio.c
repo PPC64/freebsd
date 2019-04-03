@@ -250,17 +250,65 @@ virtio_config_generation(device_t dev)
 void
 virtio_read_device_config(device_t dev, bus_size_t offset, void *dst, int len)
 {
-
 	VIRTIO_BUS_READ_DEVICE_CONFIG(device_get_parent(dev),
 	    offset, dst, len);
+#if _BYTE_ORDER != _LITTLE_ENDIAN
+	switch(len){
+		case 1:
+			break;
+		case 2: {
+			uint16_t *val = dst;
+			*val = le16toh(*val);
+			}
+			break;
+		case 4: {
+			uint32_t *val = dst;
+			*val = le32toh(*val);
+			}
+			break;
+		case 8: {
+			uint64_t *val = dst;
+			*val = le64toh(*val);
+			}
+		default:
+			device_printf(dev, "WARNING: unhandled len %d. \
+					Byte ordering may be incorrect.", len);
+	}
+#endif
 }
 
 void
 virtio_write_device_config(device_t dev, bus_size_t offset, void *dst, int len)
 {
-
+#if _BYTE_ORDER != _LITTLE_ENDIAN
+	switch(len){
+	case 1:
+		break;
+	case 2: {
+		uint16_t val = htole16(*(uint16_t*)dst);
+		VIRTIO_BUS_WRITE_DEVICE_CONFIG(device_get_parent(dev),
+					offset, &val, len);
+		}
+		return;
+	case 4: {
+		uint32_t val = htole32(*(uint32_t*)dst);
+		VIRTIO_BUS_WRITE_DEVICE_CONFIG(device_get_parent(dev),
+				offset, &val, len);
+		}
+		return;
+	case 8: {
+		uint64_t val = htole64(*(uint64_t*)dst);
+		VIRTIO_BUS_WRITE_DEVICE_CONFIG(device_get_parent(dev),
+				offset, &val, len);
+		}
+		return;
+	default:
+		device_printf(dev, "WARNING: unhandled len %d. \
+				Byte ordering may be incorrect.", len);
+	}
+#endif
 	VIRTIO_BUS_WRITE_DEVICE_CONFIG(device_get_parent(dev),
-	    offset, dst, len);
+			offset, dst, len);
 }
 
 static int

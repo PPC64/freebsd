@@ -252,7 +252,7 @@ virtio_read_device_config(device_t dev, bus_size_t offset, void *dst, int len)
 {
 	VIRTIO_BUS_READ_DEVICE_CONFIG(device_get_parent(dev),
 	    offset, dst, len);
-#if _BYTE_ORDER != _LITTLE_ENDIAN
+
 	switch(len){
 		case 1:
 			break;
@@ -274,13 +274,11 @@ virtio_read_device_config(device_t dev, bus_size_t offset, void *dst, int len)
 			device_printf(dev, "WARNING: unhandled len %d. \
 					Byte ordering may be incorrect.", len);
 	}
-#endif
 }
 
 void
 virtio_write_device_config(device_t dev, bus_size_t offset, void *dst, int len)
 {
-#if _BYTE_ORDER != _LITTLE_ENDIAN
 	switch(len){
 	case 1:
 		break;
@@ -306,7 +304,7 @@ virtio_write_device_config(device_t dev, bus_size_t offset, void *dst, int len)
 		device_printf(dev, "WARNING: unhandled len %d. \
 				Byte ordering may be incorrect.", len);
 	}
-#endif
+
 	VIRTIO_BUS_WRITE_DEVICE_CONFIG(device_get_parent(dev),
 			offset, dst, len);
 }

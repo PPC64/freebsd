@@ -269,7 +269,7 @@ __LLVM_TARGETS= \
 		powerpc \
 		sparc \
 		x86
-__LLVM_TARGET_FILT=	C/(amd64|i386)/x86/:S/sparc64/sparc/:S/arm64/aarch64/
+__LLVM_TARGET_FILT=	C/(amd64|i386)/x86/:S/sparc64/sparc/:S/arm64/aarch64/:S/powerpc64/powerpc/
 .for __llt in ${__LLVM_TARGETS}
 # Default the given TARGET's LLVM_TARGET support to the value of MK_CLANG.
 .if ${__TT:${__LLVM_TARGET_FILT}} == ${__llt}
@@ -296,7 +296,7 @@ __DEFAULT_NO_OPTIONS+=LLVM_TARGET_BPF
 # build Clang without using an external compiler.
 
 .if ${COMPILER_FEATURES:Mc++11} && (${__T} == "aarch64" || \
-    ${__T} == "amd64" || ${__TT} == "arm" || ${__T} == "i386")
+    ${__T} == "amd64" || ${__TT} == "arm" || ${__T} == "i386" || ${__TT} == "powerpc64")
 # Clang is enabled, and will be installed as the default /usr/bin/cc.
 __DEFAULT_YES_OPTIONS+=CLANG CLANG_BOOTSTRAP CLANG_IS_CC LLD
 __DEFAULT_NO_OPTIONS+=GCC GCC_BOOTSTRAP GNUCXX GPL_DTC
@@ -319,18 +319,19 @@ BROKEN_OPTIONS+=BINUTILS BINUTILS_BOOTSTRAP GCC GCC_BOOTSTRAP GDB
 BROKEN_OPTIONS+=OFED
 .endif
 .if ${__T} == "aarch64" || ${__T} == "amd64" || ${__T} == "i386" || \
-    ${__T:Mriscv*} != "" || ${__TT} == "mips"
+    ${__T:Mriscv*} != "" || ${__TT} == "mips" || ${__TT} == "powerpc64"
 __DEFAULT_YES_OPTIONS+=LLVM_LIBUNWIND
 .else
 __DEFAULT_NO_OPTIONS+=LLVM_LIBUNWIND
 .endif
 .if ${__T} == "aarch64" || ${__T} == "amd64" || ${__T} == "armv7" || \
-    ${__T} == "i386"
+    ${__T} == "i386" || ${__T} == "powerpc64"
 __DEFAULT_YES_OPTIONS+=LLD_BOOTSTRAP LLD_IS_LD
 .else
 __DEFAULT_NO_OPTIONS+=LLD_BOOTSTRAP LLD_IS_LD
 .endif
-.if ${__T} == "aarch64" || ${__T} == "amd64" || ${__T} == "i386"
+.if ${__T} == "aarch64" || ${__T} == "amd64" || ${__T} == "i386" || \
+    ${__T} == "powerpc64"
 __DEFAULT_YES_OPTIONS+=LLDB
 .else
 __DEFAULT_NO_OPTIONS+=LLDB

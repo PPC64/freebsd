@@ -18,6 +18,8 @@ CFLAGS+= -mlong-calls
 .endif
 .endif
 
+CFLAGS+= -O3
+
 LINKS=	${BINDIR}/clang ${BINDIR}/clang++ \
 	${BINDIR}/clang ${BINDIR}/clang-cpp
 MLINKS=	clang.1 clang++.1 \

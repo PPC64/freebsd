@@ -146,9 +146,10 @@
 /* DTrace trap opcode. */
 #define EXC_DTRACE	0x7ffff808
 
-/* Magic pointer to store TOC base and other info for trap handlers on ppc64 */
-#define TRAP_GENTRAP	0x1f0
-#define TRAP_TOCBASE	0x1f8
+/* Magic pointers to store TOC base and other info for trap handlers on ppc64 */
+#define TRAP_ADDR_POWER_SAVE	0x1d8	/* &power_save_sequence */
+#define TRAP_GENTRAP		0x1f0	/* &generictrap */
+#define TRAP_TOCBASE		0x1f8	/* Located at end of EXC_RST region. */
 
 #ifndef LOCORE
 struct	trapframe;

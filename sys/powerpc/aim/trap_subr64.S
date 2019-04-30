@@ -49,6 +49,17 @@
 	ld	r,0(r)
 
 /*
+ * 8 bytes - Load DMAP address 0 into a register.
+ * Setup for accessing trap area memory with the MMU on or off.
+ * Optimized for low instruction count instead of flexibility.
+ * Note: This assumes the least significant 48 bits of
+ * DMAP_BASE_ADDRESS are 0!
+ */
+#define DMAP_ZERO(r)	\
+	lis	r,DMAP_BASE_ADDRESS@highesta;	/* To real-mode alias/dmap */ \
+	sldi	r,r,32
+
+/*
  * Restore SRs for a pmap
  *
  * Requires that r28-r31 be scratch, with r28 initialized to the SLB cache
@@ -317,29 +328,32 @@ CNAME(rstcode):
 	 * processor is waking up from power saving mode
 	 * It is software reset when 46:47 = 0b00
 	 */
-	mfsrr1	%r9			/* Load SRR1 into r9 */
-	andis.	%r9,%r9,0x3		/* Logic AND with 46:47 bits */
-	beq	2f			/* Branch if software reset */
-	bl	1f
-	.llong	cpu_wakeup_handler
+	xor	%r2,%r2,%r2		/* 0x100 Zero r2 for REAL-MODE idx
+					 * to save one instruction.
+					 */
+	ld	%r2,TRAP_GENTRAP(%r2)	/* 0x104 Establish known location in
+					 * trap_gentrap.S for branch calc.
+					 */
+	mfsrr1	%r9			/* 0x108 Load SRR1 into r9 */
+	andis.	%r9,%r9,0x3		/* 0x10c Logic AND with 46:47 bits */
+
+	beq	2f			/* 0x110 Branch if software reset */
+	addi	%r9,%r2,(cpu_wakeup_handler-generictrap) /* 0x114 */
+	b	1f			/* 0x118 */
 
 	/* It is software reset */
 
 	/* Explicitly set MSR[SF] */
-2:	mfmsr	%r9
-	li	%r8,1
-	insrdi	%r9,%r8,1,0
-	mtmsrd	%r9
-	isync
+2:	mfmsr	%r9			/* 0x11c */
+	li	%r8,1			/* 0x120 */
+	insrdi	%r9,%r8,1,0		/* 0x124 */
+	mtmsrd	%r9			/* 0x128 */
+	isync				/* 0x12c */
 
-	bl	1f
-	.llong	cpu_reset_handler /* Make sure to maintain 8-byte alignment */
+	addi	%r9,%r2,(cpu_reset_handler-generictrap) /* 0x130 */
 
-1:	mflr	%r9
-	ld	%r9,0(%r9)
-	mtlr	%r9
-
-	blr
+1:	mtlr	%r9				/* 0x134 */
+	blr					/* 0x138 */
 CNAME(rstcodeend):
 
 cpu_reset_handler:
@@ -471,38 +485,39 @@ CNAME(hypertrapcodeend):
 	.globl	CNAME(slbtrap),CNAME(slbtrapend)
 	.p2align 3
 CNAME(slbtrap):
+	/* 0x00 */
 	mtsprg1	%r1			/* save SP */
 	GET_CPUINFO(%r1)
 	std	%r2,(PC_SLBSAVE+16)(%r1)
 	mfcr	%r2			/* save CR */
+	/* 0x10 */
 	std	%r2,(PC_SLBSAVE+104)(%r1)
 	mfsrr1	%r2			/* test kernel mode */
 	mtcr	%r2
 	bf	17,2f			/* branch if PSL_PR is false */
+	/* 0x20 */
 	/* User mode */
 	ld	%r2,(PC_SLBSAVE+104)(%r1) /* Restore CR */
 	mtcr	%r2
 	ld	%r2,(PC_SLBSAVE+16)(%r1) /* Restore R2 */
 	mflr	%r1			/* Save the old LR in r1 */
+	/* 0x30 */
 	mtsprg2 %r1			/* And then in SPRG2 */
-					/* 52 bytes so far */
-	bl	1f
-	.llong	generictrap
-1:	mflr	%r1
-	ld	%r1,0(%r1)
+	DMAP_ZERO(%r1)			/* two instructions */
+	ld	%r1,TRAP_GENTRAP(%r1)
+	/* 0x40 */ 
 	mtlr	%r1
 	li	%r1, 0x80		/* How to get the vector from LR */
 	blrl				/* Branch to generictrap */
-					/* 84 bytes */
 2:	mflr	%r2			/* Save the old LR in r2 */
-	nop
-	bl	3f			/* Begin dance to jump to kern_slbtrap*/
-	.llong	kern_slbtrap
-3:	mflr	%r1
-	ld	%r1,0(%r1)
+	/* 0x50 */
+	DMAP_ZERO(%r1)			/* two instructions */
+	ld	%r1,TRAP_GENTRAP(%r1)
+	addi    %r1,%r1,(kern_slbtrap-generictrap)
+	/* 0x60 */
 	mtlr	%r1
 	GET_CPUINFO(%r1)
-	blrl				/* 124 bytes -- 4 to spare */
+	blrl				/* must fit in 128 bytes! */
 CNAME(slbtrapend):
 
 kern_slbtrap:
@@ -641,14 +656,9 @@ CNAME(alitrap):
 	mflr	%r28			/* save LR */
 	mfcr	%r29			/* save CR */
 
-	/* Begin dance to branch to s_trap in a bit */
-	b	1f
-	.p2align 3
-1:	nop
-	bl	1f
-	.llong	s_trap
-1:	mflr	%r31
-	ld	%r31,0(%r31)
+	DMAP_ZERO(%r31)			/* two instructions */
+	ld	%r31,TRAP_GENTRAP(%r31)
+	addi	%r31,%r31,(s_trap - generictrap)
 	mtlr	%r31
 
 	/* Put our exception vector in SPRG3 */
@@ -681,10 +691,9 @@ CNAME(dsitrap):
 	mfsrr1	%r31			/* test kernel mode */
 	mtcr	%r31
 	mflr	%r28			/* save LR (SP already saved) */
-	bl	1f			/* Begin branching to disitrap */
-	.llong	disitrap
-1:	mflr	%r1
-	ld	%r1,0(%r1)
+	DMAP_ZERO(%r1)
+	ld	%r1,TRAP_GENTRAP(%r1)
+	addi	%r1,%r1,(disitrap-generictrap)
 	mtlr	%r1
 	blrl				/* Branch to generictrap */
 CNAME(dsiend):
@@ -966,11 +975,9 @@ CNAME(dblow):
         std	%r30,(PC_DBSAVE+CPUSAVE_R30)(%r1)	/* free r30 */
         std	%r31,(PC_DBSAVE+CPUSAVE_R31)(%r1)	/* free r31 */
         mflr	%r28					/* save LR */
-	nop						/* alignment */
-	bl	9f					/* Begin branch */
-	.llong	dbtrap
-9:	mflr	%r1
-	ld	%r1,0(%r1)
+	DMAP_ZERO(%r1)
+	ld	%r1,TRAP_GENTRAP(%r1)
+	addi	%r1,%r1,(dbtrap-generictrap)
 	mtlr	%r1
 	blrl				/* Branch to generictrap */
 CNAME(dbend):

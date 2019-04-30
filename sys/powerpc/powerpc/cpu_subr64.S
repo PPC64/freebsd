@@ -30,6 +30,7 @@
 #include "assym.inc"
 
 #include <machine/asm.h>
+#include <machine/trap.h>
 
 	.globl	CNAME(power_save_sequence)
 	.p2align 3
@@ -65,11 +66,9 @@ ENTRY(enter_idle_powerx)
 	std	%r1,PCB_SP(%r3)		/* Save the stack pointer */
 	std	%r2,PCB_TOC(%r3)	/* Save the TOC pointer */
 
-	/* Set where we want to jump */
-	bl	1f
-	.llong power_save_sequence	/* Remember about 8 byte alignment */
-1:	mflr	%r3
-	ld	%r3,0(%r3)
+	lis	%r3,DMAP_BASE_ADDRESS@highesta;	/* To real-mode alias/dmap */
+	sldi	%r3,%r3,32
+	ld	%r3,TRAP_ADDR_POWER_SAVE(%r3)
 	mtsrr0	%r3
 
 	/* Set MSR */

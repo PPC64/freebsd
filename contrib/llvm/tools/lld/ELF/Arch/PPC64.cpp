@@ -123,6 +123,7 @@ public:
 
   bool adjustPrologueForCrossSplitStack(uint8_t *Loc, uint8_t *End,
                                         uint8_t StOther) const override;
+  uint32_t getThunkSectionSpacing() const override;
 };
 } // namespace
 
@@ -923,6 +924,25 @@ bool PPC64::adjustPrologueForCrossSplitStack(uint8_t *Loc, uint8_t *End,
   }
 
   return true;
+}
+
+uint32_t PPC64::getThunkSectionSpacing() const {
+  // PowerPC64 has the following basic branch instructions:
+  //
+  //      - b[l,a]  PPC64_REL24 range [33,554,432...33,554,428]
+  //      - bc[l,a] PPC64_REL14 range [-32,768...32764]
+  //
+  // We take the less strict range, and intentionally use a lower
+  // size than the maximum branch range so the end of the ThunkSection
+  // is more likely to be within range of the branch instruction that
+  // is furthest away.
+  //
+  // Reducing it in 0x40000 allow creating 32,768 16 byte Thunks at any
+  // offset in a ThunkSection without risk of a branch to one of the
+  // Thunks going out of range.
+  //
+  // See comment in Arch/ARM.cpp for more detais of getThunkSectionSpacing().
+  return 0x2000000 - 0x80000;
 }
 
 TargetInfo *elf::getPPC64TargetInfo() {

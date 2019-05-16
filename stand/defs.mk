@@ -95,20 +95,7 @@ CFLAGS+= -DLOADER_DISK_SUPPORT
 CFLAGS+=	-m32 -mcpu=powerpc
 
 #### temporary workaround!!
-.if defined(CROSS_TOOLCHAIN)
-# if building an ELFv2 base on an ELFv1/GCC4 host
-.if ${MK_CROSS_COMPILER} == "no" && ${TARGET_ABI} == "elfv2"
-PPC64_STAND_LD?=	/usr/bin/ld.bfd
-# else if cross-compiling from other arch
-.else
-PPC64_STAND_LD?=	/usr/local/powerpc64-unknown-freebsd13.0/bin/ld.bfd
-.endif
-# else: native
-.else
-PPC64_STAND_LD?=	/usr/local/bin/ld.bfd
-.endif
-
-CFLAGS+=       -fuse-ld=${PPC64_STAND_LD}
+CFLAGS+=       -fuse-ld=/usr/local/powerpc64-unknown-freebsd12.0/bin/ld.bfd 
 .endif
 
 # For amd64, there's a bit of mixed bag. Some of the tree (i386, lib*32) is

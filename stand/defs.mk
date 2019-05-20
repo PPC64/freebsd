@@ -93,6 +93,10 @@ CFLAGS+= -DLOADER_DISK_SUPPORT
 # or powerpc64.
 .if ${MACHINE_ARCH} == "powerpc64"
 CFLAGS+=	-m32 -mcpu=powerpc
+# Use same linker used to link 32 bit binaries
+.if ${LINKER_TYPE} == "lld"
+CFLAGS+=	-fuse-ld=${LIB32LD}
+.endif
 .endif
 
 # For amd64, there's a bit of mixed bag. Some of the tree (i386, lib*32) is

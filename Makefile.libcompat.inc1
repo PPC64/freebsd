@@ -1,0 +1,29 @@
+#
+# $FreeBSD$
+#
+
+# Currently LLD support for PowerPC 32-bit is not complete,
+# so falling back to ld.bfd
+.if ${TARGET_ARCH} == "powerpc64" &&  "${LINKER_TYPE}" == "lld"
+
+# cross build with toolchain file and NOT defined binutils prefix
+.if ("${HOST_ARCH}" != "${TARGET_ARCH}") && defined(CROSS_TOOLCHAIN) && !defined(CROSS_BINUTILS_PREFIX)
+.info 32 bit binaries on PowerPC64 requires binutils linker ld.bfd. Please set CROSS_BINUTILS_PREFIX.
+
+# cross build with toolchain file and defined binutils prefix
+.elif ("${HOST_ARCH}" != "${TARGET_ARCH}") && defined(CROSS_TOOLCHAIN) && defined(CROSS_BINUTILS_PREFIX)
+LIB32LD?=${LOCALBASE}/bin/${CROSS_BINUTILS_PREFIX}-ld.bfd
+
+# cross build without using toolchain file (using builtin cross toolchain)
+.elif ("${HOST_ARCH}" != "${TARGET_ARCH}")
+LIB32LD?=${WORLDTMP}/usr/bin/ld.bfd
+
+.else # Native build
+LIB32LD?=ld.bfd
+.endif
+
+.info LIB32: using ${LIB32LD} as linker for LIB32
+.endif
+
+# for other platforms (or when LIB32LD is not set), just use the main linker
+LIB32LD?=${XLD}

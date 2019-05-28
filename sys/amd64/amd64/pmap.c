@@ -421,6 +421,8 @@ static int pmap_flags = PMAP_PDE_SUPERPAGE;	/* flags for x86 pmaps */
 
 static vmem_t *large_vmem;
 static u_int lm_ents;
+#define	PMAP_LARGEMAP_MAX_ADDRESS()			\
+    (LARGEMAP_MIN_ADDRESS + NBPML4 * (u_long)lm_ents)
 
 int pmap_pcid_enabled = 1;
 SYSCTL_INT(_vm_pmap, OID_AUTO, pcid_enabled, CTLFLAG_RDTUN | CTLFLAG_NOFETCH,
@@ -1060,6 +1062,7 @@ static void pmap_invalidate_pde_page(pmap_t pmap, vm_offset_t va,
 		    pd_entry_t pde);
 static void pmap_kenter_attr(vm_offset_t va, vm_paddr_t pa, int mode);
 static vm_page_t pmap_large_map_getptp_unlocked(void);
+static vm_paddr_t pmap_large_map_kextract(vm_offset_t va);
 static void pmap_pde_attr(pd_entry_t *pde, int cache_bits, int mask);
 #if VM_NRESERVLEVEL > 0
 static void pmap_promote_pde(pmap_t pmap, pd_entry_t *pde, vm_offset_t va,
@@ -1335,7 +1338,6 @@ static void
 create_pagetables(vm_paddr_t *firstaddr)
 {
 	int i, j, ndm1g, nkpdpe, nkdmpde;
-	pt_entry_t *pt_p;
 	pd_entry_t *pd_p;
 	pdp_entry_t *pdp_p;
 	pml4_entry_t *p4_p;
@@ -1396,20 +1398,21 @@ create_pagetables(vm_paddr_t *firstaddr)
 	KPTphys = allocpages(firstaddr, nkpt);
 	KPDphys = allocpages(firstaddr, nkpdpe);
 
-	/* Fill in the underlying page table pages */
-	/* XXX not fully used, underneath 2M pages */
-	pt_p = (pt_entry_t *)KPTphys;
-	for (i = 0; ptoa(i) < *firstaddr; i++)
-		pt_p[i] = ptoa(i) | X86_PG_V | pg_g | bootaddr_rwx(ptoa(i));
-
-	/* Now map the page tables at their location within PTmap */
+	/*
+	 * Connect the zero-filled PT pages to their PD entries.  This
+	 * implicitly maps the PT pages at their correct locations within
+	 * the PTmap.
+	 */
 	pd_p = (pd_entry_t *)KPDphys;
 	for (i = 0; i < nkpt; i++)
 		pd_p[i] = (KPTphys + ptoa(i)) | X86_PG_RW | X86_PG_V;
 
-	/* Map from zero to end of allocations under 2M pages */
-	/* This replaces some of the KPTphys entries above */
-	for (i = 0; (i << PDRSHIFT) < *firstaddr; i++)
+	/*
+	 * Map from physical address zero to the end of loader preallocated
+	 * memory using 2MB pages.  This replaces some of the PD entries
+	 * created above.
+	 */
+	for (i = 0; (i << PDRSHIFT) < KERNend; i++)
 		/* Preset PG_M and PG_A because demotion expects it. */
 		pd_p[i] = (i << PDRSHIFT) | X86_PG_V | PG_PS | pg_g |
 		    X86_PG_M | X86_PG_A | bootaddr_rwx(i << PDRSHIFT);
@@ -1419,7 +1422,8 @@ create_pagetables(vm_paddr_t *firstaddr)
 	 * to record the physical blocks we've actually mapped into kernel
 	 * virtual address space.
 	 */
-	*firstaddr = round_2mpage(*firstaddr);
+	if (*firstaddr < round_2mpage(KERNend))
+		*firstaddr = round_2mpage(KERNend);
 
 	/* And connect up the PD to the PDP (leaving room for L4 pages) */
 	pdp_p = (pdp_entry_t *)(KPDPphys + ptoa(KPML4I - KPML4BASE));
@@ -1526,7 +1530,10 @@ pmap_bootstrap(vm_paddr_t *firstaddr)
 	 */
 	vm_phys_add_seg(KPTphys, KPTphys + ptoa(nkpt));
 
-	virtual_avail = (vm_offset_t) KERNBASE + *firstaddr;
+	/*
+	 * Account for the virtual addresses mapped by create_pagetables().
+	 */
+	virtual_avail = (vm_offset_t)KERNBASE + round_2mpage(KERNend);
 	virtual_end = VM_MAX_KERNEL_ADDRESS;
 
 	/*
@@ -2961,6 +2968,9 @@ pmap_kextract(vm_offset_t va)
 
 	if (va >= DMAP_MIN_ADDRESS && va < DMAP_MAX_ADDRESS) {
 		pa = DMAP_TO_PHYS(va);
+	} else if (LARGEMAP_MIN_ADDRESS <= va &&
+	    va < PMAP_LARGEMAP_MAX_ADDRESS()) {
+		pa = pmap_large_map_kextract(va);
 	} else {
 		pde = *vtopde(va);
 		if (pde & PG_PS) {
@@ -4537,8 +4547,10 @@ pmap_demote_pde_locked(pmap_t pmap, pd_entry_t *pde, vm_offset_t va,
 			    " in pmap %p", va, pmap);
 			return (FALSE);
 		}
-		if (va < VM_MAXUSER_ADDRESS)
+		if (va < VM_MAXUSER_ADDRESS) {
+			mpte->wire_count = NPTEPG;
 			pmap_resident_count_inc(pmap, 1);
+		}
 	}
 	mptepa = VM_PAGE_TO_PHYS(mpte);
 	firstpte = (pt_entry_t *)PHYS_TO_DMAP(mptepa);
@@ -4551,12 +4563,12 @@ pmap_demote_pde_locked(pmap_t pmap, pd_entry_t *pde, vm_offset_t va,
 	newpte = pmap_swap_pat(pmap, newpte);
 
 	/*
-	 * If the page table page is new, initialize it.
+	 * If the page table page is not leftover from an earlier promotion,
+	 * initialize it.
 	 */
-	if (mpte->wire_count == 1) {
-		mpte->wire_count = NPTEPG;
+	if ((oldpde & PG_PROMOTED) == 0)
 		pmap_fill_ptp(firstpte, newpte);
-	}
+
 	KASSERT((*firstpte & PG_FRAME) == (newpte & PG_FRAME),
 	    ("pmap_demote_pde: firstpte and newpte map different physical"
 	    " addresses"));
@@ -8773,6 +8785,39 @@ retry:
 	return ((pt_entry_t *)PHYS_TO_DMAP(mphys) + pmap_pte_index(va));
 }
 
+static vm_paddr_t
+pmap_large_map_kextract(vm_offset_t va)
+{
+	pdp_entry_t *pdpe, pdp;
+	pd_entry_t *pde, pd;
+	pt_entry_t *pte, pt;
+
+	KASSERT(LARGEMAP_MIN_ADDRESS <= va && va < PMAP_LARGEMAP_MAX_ADDRESS(),
+	    ("not largemap range %#lx", (u_long)va));
+	pdpe = pmap_large_map_pdpe(va);
+	pdp = *pdpe;
+	KASSERT((pdp & X86_PG_V) != 0,
+	    ("invalid pdp va %#lx pdpe %#lx pdp %#lx", va,
+	    (u_long)pdpe, pdp));
+	if ((pdp & X86_PG_PS) != 0) {
+		KASSERT((amd_feature & AMDID_PAGE1GB) != 0,
+		    ("no 1G pages, va %#lx pdpe %#lx pdp %#lx", va,
+		    (u_long)pdpe, pdp));
+		return ((pdp & PG_PS_PDP_FRAME) | (va & PDPMASK));
+	}
+	pde = pmap_pdpe_to_pde(pdpe, va);
+	pd = *pde;
+	KASSERT((pd & X86_PG_V) != 0,
+	    ("invalid pd va %#lx pde %#lx pd %#lx", va, (u_long)pde, pd));
+	if ((pd & X86_PG_PS) != 0)
+		return ((pd & PG_PS_FRAME) | (va & PDRMASK));
+	pte = pmap_pde_to_pte(pde, va);
+	pt = *pte;
+	KASSERT((pt & X86_PG_V) != 0,
+	    ("invalid pte va %#lx pte %#lx pt %#lx", va, (u_long)pte, pt));
+	return ((pt & PG_FRAME) | (va & PAGE_MASK));
+}
+
 static int
 pmap_large_map_getva(vm_size_t len, vm_offset_t align, vm_offset_t phase,
     vmem_addr_t *vmem_res)
@@ -8889,8 +8934,8 @@ pmap_large_unmap(void *svaa, vm_size_t len)
 		return;
 
 	SLIST_INIT(&spgf);
-	KASSERT(LARGEMAP_MIN_ADDRESS <= sva && sva + len <=
-	    LARGEMAP_MAX_ADDRESS + NBPML4 * (u_long)lm_ents,
+	KASSERT(LARGEMAP_MIN_ADDRESS <= sva &&
+	    sva + len <= PMAP_LARGEMAP_MAX_ADDRESS(),
 	    ("not largemap range %#lx %#lx", (u_long)svaa, (u_long)svaa + len));
 	PMAP_LOCK(kernel_pmap);
 	for (va = sva; va < sva + len; va += inc) {

@@ -59,6 +59,15 @@ __FBSDID("$FreeBSD$");
 
 #include "phyp-hvcall.h"
 
+#define MMU_PHYP_DEBUG
+#ifdef MMU_PHYP_DEBUG
+#define dprintf(fmt, ...) printf(fmt, ## __VA_ARGS__)
+#define dprintf0(fmt, ...) dprintf("mmu_phyp: " fmt, ## __VA_ARGS__)
+#else
+#define dprintf(fmt, args...) do { ; } while(0)
+#define dprintf(fmt, args...) do { ; } while(0)
+#endif
+
 static struct rmlock mphyp_eviction_lock;
 
 /*
@@ -149,8 +158,7 @@ mphyp_bootstrap(mmu_t mmup, vm_offset_t kernelstart, vm_offset_t kernelend)
 	res = OF_getencprop(node, "ibm,slb-size", prop, sizeof(prop[0]));
 	if (res > 0)
 		n_slbs = prop[0];
-	if (bootverbose)
-		printf("mmu_phyp: ibm,slb-size=%i\n", n_slbs);
+	dprintf0("ibm,slb-size=%i\n", n_slbs);
 
 	moea64_pteg_count = final_pteg_count / sizeof(struct lpteg);
 
@@ -188,12 +196,10 @@ mphyp_bootstrap(mmu_t mmup, vm_offset_t kernelstart, vm_offset_t kernelend)
 			slb_encoding = arr[idx + 1];
 			nptlp = arr[idx + 2];
 
-			if (bootverbose)
-				printf("mmu_phyp: Segment Page Size: "
-					"%uKB, slb_enc=0x%X: "
-					"{size, encoding}[%u] = { ",
-					shift > 10? 1 << (shift-10) : 0,
-					slb_encoding, nptlp);
+			dprintf0("Segment Page Size: "
+			    "%uKB, slb_enc=0x%X: {size, encoding}[%u] =",
+			    shift > 10? 1 << (shift-10) : 0,
+			    slb_encoding, nptlp);
 
 			idx += 3;
 			len -= 3;
@@ -201,12 +207,9 @@ mphyp_bootstrap(mmu_t mmup, vm_offset_t kernelstart, vm_offset_t kernelend)
 				lp_size = arr[idx];
 				lp_encoding = arr[idx+1];
 
-				if (bootverbose)
-					printf("%s{%uKB, 0x%X}",
-						idx > 3? ", " : "",
-						lp_size > 10?
-							1 << (lp_size-10) : 0,
-						lp_encoding);
+				dprintf(" {%uKB, 0x%X}",
+				    lp_size > 10? 1 << (lp_size-10) : 0,
+				    lp_encoding);
 
 				if (slb_encoding == SLBV_L && lp_encoding == 0)
 					break;
@@ -215,7 +218,7 @@ mphyp_bootstrap(mmu_t mmup, vm_offset_t kernelstart, vm_offset_t kernelend)
 				len -= 2;
 				nptlp--;
 			}
-			printf(" }\n");
+			dprintf("\n");
 			if (nptlp && slb_encoding == SLBV_L && lp_encoding == 0)
 				break;
 		}
@@ -225,19 +228,15 @@ mphyp_bootstrap(mmu_t mmup, vm_offset_t kernelstart, vm_offset_t kernelend)
 			moea64_large_page_size = 1ULL << lp_size;
 			moea64_large_page_mask = moea64_large_page_size - 1;
 			hw_direct_map = 1;
-			if (bootverbose)
-				printf("mphyp: "
-				    "Support for hugepages of %uKB detected\n",
-				    moea64_large_page_shift > 10?
-					1 << (moea64_large_page_shift-10) : 0);
+			dprintf0("Support for hugepages of %uKB detected\n",
+			    moea64_large_page_shift > 10?
+				1 << (moea64_large_page_shift-10) : 0);
 		} else {
 			moea64_large_page_size = 0;
 			moea64_large_page_shift = 0;
 			moea64_large_page_mask = 0;
 			hw_direct_map = 0;
-			if (bootverbose)
-				printf("mphyp: "
-				    "Support for hugepages not found\n");
+			dprintf0("Support for hugepages not found\n");
 		}
 	}
 

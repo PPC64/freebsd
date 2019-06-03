@@ -40,7 +40,6 @@
 #include <vm/pmap.h>
 #include <vm/uma.h>
 #include <vm/vm.h>
-#include <vm/vm_extern.h>
 #include <vm/vm_map.h>
 #include <vm/vm_page.h>
 #include <vm/vm_pageout.h>
@@ -490,7 +489,6 @@ slb_uma_real_alloc(uma_zone_t zone, vm_size_t bytes, int domain,
 	static vm_offset_t realmax = 0;
 	void *va;
 	vm_page_t m;
-	vm_offset_t va_off;
 
 	if (realmax == 0)
 		realmax = platform_real_maxaddr();
@@ -505,11 +503,8 @@ slb_uma_real_alloc(uma_zone_t zone, vm_size_t bytes, int domain,
 	if (hw_direct_map)
 		va = (void *)PHYS_TO_DMAP(VM_PAGE_TO_PHYS(m));
 	else {
-		va_off = kva_alloc(PAGE_SIZE);
-		if (va_off == 0)
-			panic("slb_uma_real_alloc: kva_alloc() failed!\n");
-		pmap_kenter(va_off, VM_PAGE_TO_PHYS(m));
-		va = (void *)va_off;
+		va = (void *)(VM_PAGE_TO_PHYS(m) | DMAP_BASE_ADDRESS);
+		pmap_kenter((vm_offset_t)va, VM_PAGE_TO_PHYS(m));
 	}
 
 	if ((wait & M_ZERO) && (m->flags & PG_ZERO) == 0)

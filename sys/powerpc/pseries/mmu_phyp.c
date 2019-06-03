@@ -149,6 +149,8 @@ mphyp_bootstrap(mmu_t mmup, vm_offset_t kernelstart, vm_offset_t kernelend)
 	res = OF_getencprop(node, "ibm,slb-size", prop, sizeof(prop[0]));
 	if (res > 0)
 		n_slbs = prop[0];
+	if (bootverbose)
+		printf("mmu_phyp: ibm,slb-size=%i\n", n_slbs);
 
 	moea64_pteg_count = final_pteg_count / sizeof(struct lpteg);
 
@@ -185,11 +187,27 @@ mphyp_bootstrap(mmu_t mmup, vm_offset_t kernelstart, vm_offset_t kernelend)
 			shift = arr[idx];
 			slb_encoding = arr[idx + 1];
 			nptlp = arr[idx + 2];
+
+			if (bootverbose)
+				printf("mmu_phyp: Segment Page Size: "
+					"%uKB, slb_enc=0x%X: "
+					"{size, encoding}[%u] = { ",
+					shift > 10? 1 << shift-10 : 0,
+					slb_encoding, nptlp);
+
 			idx += 3;
 			len -= 3;
 			while (len > 0 && nptlp) {
 				lp_size = arr[idx];
 				lp_encoding = arr[idx+1];
+
+				if (bootverbose)
+					printf("%s{%uKB, 0x%X}",
+						idx > 3? ", " : "",
+						lp_size > 10?
+							1 << lp_size-10 : 0,
+						lp_encoding);
+
 				if (slb_encoding == SLBV_L && lp_encoding == 0)
 					break;
 
@@ -197,17 +215,30 @@ mphyp_bootstrap(mmu_t mmup, vm_offset_t kernelstart, vm_offset_t kernelend)
 				len -= 2;
 				nptlp--;
 			}
+			printf(" }\n");
 			if (nptlp && slb_encoding == SLBV_L && lp_encoding == 0)
 				break;
 		}
 
-		if (len == 0)
-			panic("Standard large pages (SLB[L] = 1, PTE[LP] = 0) "
-			    "not supported by this system. Please enable huge "
-			    "page backing if running under PowerKVM.");
-
-		moea64_large_page_shift = shift;
-		moea64_large_page_size = 1ULL << lp_size;
+		if (len > 0) {
+			moea64_large_page_shift = shift;
+			moea64_large_page_size = 1ULL << lp_size;
+			moea64_large_page_mask = moea64_large_page_size - 1;
+			hw_direct_map = 1;
+			if (bootverbose)
+				printf("mphyp: "
+				    "Support for hugepages of %uKB detected\n"
+				    moea64_large_page_shift > 10?
+					1 << moea64_large_page_shift-10 : 0);
+		} else {
+			moea64_large_page_size = 0;
+			moea64_large_page_shift = 0;
+			moea64_large_page_mask = 0;
+			hw_direct_map = 0;
+			if (bootverbose)
+				printf("mphyp: "
+				    "Support for hugepages not found\n");
+		}
 	}
 
 	moea64_mid_bootstrap(mmup, kernelstart, kernelend);

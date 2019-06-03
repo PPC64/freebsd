@@ -192,7 +192,7 @@ mphyp_bootstrap(mmu_t mmup, vm_offset_t kernelstart, vm_offset_t kernelend)
 				printf("mmu_phyp: Segment Page Size: "
 					"%uKB, slb_enc=0x%X: "
 					"{size, encoding}[%u] = { ",
-					shift > 10? 1 << shift-10 : 0,
+					shift > 10? 1 << (shift-10) : 0,
 					slb_encoding, nptlp);
 
 			idx += 3;
@@ -205,7 +205,7 @@ mphyp_bootstrap(mmu_t mmup, vm_offset_t kernelstart, vm_offset_t kernelend)
 					printf("%s{%uKB, 0x%X}",
 						idx > 3? ", " : "",
 						lp_size > 10?
-							1 << lp_size-10 : 0,
+							1 << (lp_size-10) : 0,
 						lp_encoding);
 
 				if (slb_encoding == SLBV_L && lp_encoding == 0)
@@ -227,9 +227,9 @@ mphyp_bootstrap(mmu_t mmup, vm_offset_t kernelstart, vm_offset_t kernelend)
 			hw_direct_map = 1;
 			if (bootverbose)
 				printf("mphyp: "
-				    "Support for hugepages of %uKB detected\n"
+				    "Support for hugepages of %uKB detected\n",
 				    moea64_large_page_shift > 10?
-					1 << moea64_large_page_shift-10 : 0);
+					1 << (moea64_large_page_shift-10) : 0);
 		} else {
 			moea64_large_page_size = 0;
 			moea64_large_page_shift = 0;

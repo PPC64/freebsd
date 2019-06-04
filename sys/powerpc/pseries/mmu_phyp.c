@@ -59,13 +59,14 @@ __FBSDID("$FreeBSD$");
 
 #include "phyp-hvcall.h"
 
-#define MMU_PHYP_DEBUG
-#ifdef MMU_PHYP_DEBUG
+#define MMU_PHYP_DEBUG 0
+#define MMU_PHYP_ID "mmu_phyp: "
+#if MMU_PHYP_DEBUG
 #define dprintf(fmt, ...) printf(fmt, ## __VA_ARGS__)
-#define dprintf0(fmt, ...) dprintf("mmu_phyp: " fmt, ## __VA_ARGS__)
+#define dprintf0(fmt, ...) dprintf(MMU_PHYP_ID fmt, ## __VA_ARGS__)
 #else
 #define dprintf(fmt, args...) do { ; } while(0)
-#define dprintf(fmt, args...) do { ; } while(0)
+#define dprintf0(fmt, args...) do { ; } while(0)
 #endif
 
 static struct rmlock mphyp_eviction_lock;
@@ -158,7 +159,7 @@ mphyp_bootstrap(mmu_t mmup, vm_offset_t kernelstart, vm_offset_t kernelend)
 	res = OF_getencprop(node, "ibm,slb-size", prop, sizeof(prop[0]));
 	if (res > 0)
 		n_slbs = prop[0];
-	dprintf0("ibm,slb-size=%i\n", n_slbs);
+	dprintf0("slb-size=%i\n", n_slbs);
 
 	moea64_pteg_count = final_pteg_count / sizeof(struct lpteg);
 
@@ -228,7 +229,8 @@ mphyp_bootstrap(mmu_t mmup, vm_offset_t kernelstart, vm_offset_t kernelend)
 			moea64_large_page_size = 1ULL << lp_size;
 			moea64_large_page_mask = moea64_large_page_size - 1;
 			hw_direct_map = 1;
-			dprintf0("Support for hugepages of %uKB detected\n",
+			printf(MMU_PHYP_ID
+			    "Support for hugepages of %uKB detected\n",
 			    moea64_large_page_shift > 10?
 				1 << (moea64_large_page_shift-10) : 0);
 		} else {
@@ -236,7 +238,8 @@ mphyp_bootstrap(mmu_t mmup, vm_offset_t kernelstart, vm_offset_t kernelend)
 			moea64_large_page_shift = 0;
 			moea64_large_page_mask = 0;
 			hw_direct_map = 0;
-			dprintf0("Support for hugepages not found\n");
+			printf(MMU_PHYP_ID
+			    "Support for hugepages not found\n");
 		}
 	}
 

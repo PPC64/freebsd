@@ -169,6 +169,7 @@ static caddr_t		of_bounce_virt;
 static off_t		of_bounce_offset;
 static size_t		of_bounce_size;
 static struct mtx	of_bounce_mtx;
+static struct mtx	of_real_mtx;
 
 extern int		ofw_real_mode;
 
@@ -184,14 +185,14 @@ SYSINIT(ofw_real_bounce_alloc, SI_SUB_KMEM, SI_ORDER_ANY,
 static void
 ofw_real_start(void)
 {
-	mtx_lock(&of_bounce_mtx);
+	mtx_lock_spin(&of_real_mtx);
 	of_bounce_offset = 0;
 }
 	
 static void
 ofw_real_stop(void)
 {
-	mtx_unlock(&of_bounce_mtx);
+	mtx_unlock_spin(&of_real_mtx);
 }
 
 static void
@@ -228,7 +229,7 @@ ofw_real_bounce_alloc(void *junk)
 	 * we have a 32-bit virtual address to give OF.
 	 */
 
-	if (!ofw_real_mode && (!hw_direct_map || DMAP_BASE_ADDRESS != 0)) 
+	if (!ofw_real_mode && (!hw_direct_map || DMAP_BASE_ADDRESS != 0))
 		pmap_kenter(of_bounce_phys, of_bounce_phys);
 
 	mtx_unlock(&of_bounce_mtx);
@@ -240,7 +241,7 @@ ofw_real_map(const void *buf, size_t len)
 	static char emergency_buffer[255];
 	cell_t phys;
 
-	mtx_assert(&of_bounce_mtx, MA_OWNED);
+	mtx_assert(&of_real_mtx, MA_OWNED);
 
 	if (of_bounce_virt == NULL) {
 		/*
@@ -290,7 +291,7 @@ ofw_real_map(const void *buf, size_t len)
 static void
 ofw_real_unmap(cell_t physaddr, void *buf, size_t len)
 {
-	mtx_assert(&of_bounce_mtx, MA_OWNED);
+	mtx_assert(&of_real_mtx, MA_OWNED);
 
 	if (of_bounce_virt == NULL)
 		return;
@@ -308,6 +309,7 @@ ofw_real_init(ofw_t ofw, void *openfirm)
 {
 	openfirmware = (int (*)(void *))openfirm;
 
+	mtx_init(&of_real_mtx, "OF Real", NULL, MTX_SPIN);
 	mtx_init(&of_bounce_mtx, "OF Bounce Page", NULL, MTX_DEF);
 	of_bounce_virt = NULL;
 	return (0);

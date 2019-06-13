@@ -480,7 +480,7 @@ DEFINE_LIBUNWIND_PRIVATE_FUNCTION(_ZN9libunwind13Registers_ppc6jumptoEv)
   rlwinm  %r4, %r4, 0, 0, 27  // mask low 4-bits
   // r4 is now a 16-byte aligned pointer into the red zone
   // the _vectorRegisters may not be 16-byte aligned so copy via red zone temp buffer
-
+ 
 
 #define LOAD_VECTOR_UNALIGNEDl(_index) \
   andis.  %r0, %r5, (1<<(15-_index))  SEPARATOR \

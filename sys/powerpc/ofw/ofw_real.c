@@ -168,8 +168,12 @@ static vm_offset_t	of_bounce_phys;
 static caddr_t		of_bounce_virt;
 static off_t		of_bounce_offset;
 static size_t		of_bounce_size;
+
 static struct mtx	of_bounce_mtx;
-static struct mtx	of_real_mtx;
+static struct mtx	of_spin_mtx;
+static struct mtx	*of_real_mtx;
+static void		(*of_mtx_lock)(void);
+static void		(*of_mtx_unlock)(void);
 
 extern int		ofw_real_mode;
 
@@ -183,16 +187,40 @@ SYSINIT(ofw_real_bounce_alloc, SI_SUB_KMEM, SI_ORDER_ANY,
     ofw_real_bounce_alloc, NULL);
 
 static void
+ofw_real_mtx_lock_spin(void)
+{
+	mtx_lock_spin(of_real_mtx);
+}
+
+static void
+ofw_real_mtx_lock(void)
+{
+	mtx_lock(of_real_mtx);
+}
+
+static void
+ofw_real_mtx_unlock_spin(void)
+{
+	mtx_unlock_spin(of_real_mtx);
+}
+
+static void
+ofw_real_mtx_unlock(void)
+{
+	mtx_lock(of_real_mtx);
+}
+
+static void
 ofw_real_start(void)
 {
-	mtx_lock_spin(&of_real_mtx);
+	(*of_mtx_lock)();
 	of_bounce_offset = 0;
 }
-	
+
 static void
 ofw_real_stop(void)
 {
-	mtx_unlock_spin(&of_real_mtx);
+	(*of_mtx_unlock)();
 }
 
 static void
@@ -241,7 +269,7 @@ ofw_real_map(const void *buf, size_t len)
 	static char emergency_buffer[255];
 	cell_t phys;
 
-	mtx_assert(&of_real_mtx, MA_OWNED);
+	mtx_assert(of_real_mtx, MA_OWNED);
 
 	if (of_bounce_virt == NULL) {
 		/*
@@ -291,7 +319,7 @@ ofw_real_map(const void *buf, size_t len)
 static void
 ofw_real_unmap(cell_t physaddr, void *buf, size_t len)
 {
-	mtx_assert(&of_real_mtx, MA_OWNED);
+	mtx_assert(of_real_mtx, MA_OWNED);
 
 	if (of_bounce_virt == NULL)
 		return;
@@ -307,10 +335,24 @@ ofw_real_unmap(cell_t physaddr, void *buf, size_t len)
 static int
 ofw_real_init(ofw_t ofw, void *openfirm)
 {
-	openfirmware = (int (*)(void *))openfirm;
+	int mtx_spin;
 
-	mtx_init(&of_real_mtx, "OF Real", NULL, MTX_SPIN);
+	openfirmware = (int (*)(void *))openfirm;
 	mtx_init(&of_bounce_mtx, "OF Bounce Page", NULL, MTX_DEF);
+
+	mtx_spin = 0;
+	TUNABLE_INT_FETCH("hw.ofw.mtx_spin", &mtx_spin);
+	if (mtx_spin) {
+		mtx_init(&of_spin_mtx, "OF Real", NULL, MTX_SPIN);
+		of_real_mtx = &of_spin_mtx;
+		of_mtx_lock = ofw_real_mtx_lock_spin;
+		of_mtx_unlock = ofw_real_mtx_unlock_spin;
+	} else {
+		of_real_mtx = &of_bounce_mtx;
+		of_mtx_lock = ofw_real_mtx_lock;
+		of_mtx_unlock = ofw_real_mtx_unlock;
+	}
+
 	of_bounce_virt = NULL;
 	return (0);
 }

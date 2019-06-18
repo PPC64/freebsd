@@ -1410,8 +1410,6 @@ _pmap_unwire_l3(pmap_t pmap, vm_offset_t va, vm_page_t m, struct spglist *free)
 	}
 	pmap_invalidate_page(pmap, va);
 
-	vm_wire_sub(1);
-
 	/*
 	 * Put page on a list so that it is released after
 	 * *ALL* TLB shootdown is done
@@ -2030,9 +2028,8 @@ next_chunk:
 		SLIST_REMOVE_HEAD(&free, plinks.s.ss);
 		/* Recycle a freed page table page. */
 		m_pc->wire_count = 1;
-		vm_wire_add(1);
 	}
-	vm_page_free_pages_toq(&free, false);
+	vm_page_free_pages_toq(&free, true);
 	return (m_pc);
 }
 
@@ -2470,8 +2467,7 @@ pmap_remove_l2(pmap_t pmap, pt_entry_t *l2, vm_offset_t sva,
 			pmap_resident_count_dec(pmap, 1);
 			KASSERT(ml3->wire_count == NL3PG,
 			    ("pmap_remove_l2: l3 page wire count error"));
-			ml3->wire_count = 1;
-			vm_page_unwire_noq(ml3);
+			ml3->wire_count = 0;
 			pmap_add_delayed_free_list(ml3, free, FALSE);
 		}
 	}
@@ -2624,7 +2620,7 @@ pmap_remove(pmap_t pmap, vm_offset_t sva, vm_offset_t eva)
 	if (lock != NULL)
 		rw_wunlock(lock);
 	PMAP_UNLOCK(pmap);
-	vm_page_free_pages_toq(&free, false);
+	vm_page_free_pages_toq(&free, true);
 }
 
 /*
@@ -2729,7 +2725,52 @@ retry:
 	}
 	vm_page_aflag_clear(m, PGA_WRITEABLE);
 	rw_wunlock(lock);
-	vm_page_free_pages_toq(&free, false);
+	vm_page_free_pages_toq(&free, true);
+}
+
+/*
+ * pmap_protect_l2: do the things to protect a 2MB page in a pmap
+ */
+static void
+pmap_protect_l2(pmap_t pmap, pt_entry_t *l2, vm_offset_t sva, pt_entry_t nbits)
+{
+	pd_entry_t old_l2;
+	vm_page_t m, mt;
+
+	PMAP_LOCK_ASSERT(pmap, MA_OWNED);
+	KASSERT((sva & L2_OFFSET) == 0,
+	    ("pmap_protect_l2: sva is not 2mpage aligned"));
+	old_l2 = pmap_load(l2);
+	KASSERT((old_l2 & ATTR_DESCR_MASK) == L2_BLOCK,
+	    ("pmap_protect_l2: L2e %lx is not a block mapping", old_l2));
+
+	/*
+	 * Return if the L2 entry already has the desired access restrictions
+	 * in place.
+	 */
+	if ((old_l2 | nbits) == old_l2)
+		return;
+
+	/*
+	 * When a dirty read/write superpage mapping is write protected,
+	 * update the dirty field of each of the superpage's constituent 4KB
+	 * pages.
+	 */
+	if ((nbits & ATTR_AP(ATTR_AP_RO)) != 0 &&
+	    (old_l2 & ATTR_SW_MANAGED) != 0 &&
+	    pmap_page_dirty(old_l2)) {
+		m = PHYS_TO_VM_PAGE(old_l2 & ~ATTR_MASK);
+		for (mt = m; mt < &m[L2_SIZE / PAGE_SIZE]; mt++)
+			vm_page_dirty(mt);
+	}
+
+	pmap_set(l2, nbits);
+
+	/*
+	 * Since a promotion must break the 4KB page mappings before making
+	 * the 2MB page mapping, a pmap_invalidate_page() suffices.
+	 */
+	pmap_invalidate_page(pmap, sva);
 }
 
 /*
@@ -2749,8 +2790,12 @@ pmap_protect(pmap_t pmap, vm_offset_t sva, vm_offset_t eva, vm_prot_t prot)
 		return;
 	}
 
-	if ((prot & (VM_PROT_WRITE | VM_PROT_EXECUTE)) ==
-	    (VM_PROT_WRITE | VM_PROT_EXECUTE))
+	nbits = 0;
+	if ((prot & VM_PROT_WRITE) == 0)
+		nbits |= ATTR_AP(ATTR_AP_RO);
+	if ((prot & VM_PROT_EXECUTE) == 0)
+		nbits |= ATTR_XN;
+	if (nbits == 0)
 		return;
 
 	PMAP_LOCK(pmap);
@@ -2781,8 +2826,10 @@ pmap_protect(pmap_t pmap, vm_offset_t sva, vm_offset_t eva, vm_prot_t prot)
 			continue;
 
 		if ((pmap_load(l2) & ATTR_DESCR_MASK) == L2_BLOCK) {
-			l3p = pmap_demote_l2(pmap, l2, sva);
-			if (l3p == NULL)
+			if (sva + L2_SIZE == va_next && eva >= va_next) {
+				pmap_protect_l2(pmap, l2, sva, nbits);
+				continue;
+			} else if (pmap_demote_l2(pmap, l2, sva) == NULL)
 				continue;
 		}
 		KASSERT((pmap_load(l2) & ATTR_DESCR_MASK) == L2_TABLE,
@@ -2794,26 +2841,38 @@ pmap_protect(pmap_t pmap, vm_offset_t sva, vm_offset_t eva, vm_prot_t prot)
 		va = va_next;
 		for (l3p = pmap_l2_to_l3(l2, sva); sva != va_next; l3p++,
 		    sva += L3_SIZE) {
+			/*
+			 * Go to the next L3 entry if the current one is
+			 * invalid or already has the desired access
+			 * restrictions in place.  (The latter case occurs
+			 * frequently.  For example, in a "buildworld"
+			 * workload, almost 1 out of 4 L3 entries already
+			 * have the desired restrictions.)
+			 */
 			l3 = pmap_load(l3p);
-			if (!pmap_l3_valid(l3))
-				continue;
-
-			nbits = 0;
-			if ((prot & VM_PROT_WRITE) == 0) {
-				if ((l3 & ATTR_SW_MANAGED) &&
-				    pmap_page_dirty(l3)) {
-					vm_page_dirty(PHYS_TO_VM_PAGE(l3 &
-					    ~ATTR_MASK));
+			if (!pmap_l3_valid(l3) || (l3 | nbits) == l3) {
+				if (va != va_next) {
+					pmap_invalidate_range(pmap, va, sva);
+					va = va_next;
 				}
-				nbits |= ATTR_AP(ATTR_AP_RO);
+				continue;
 			}
-			if ((prot & VM_PROT_EXECUTE) == 0)
-				nbits |= ATTR_XN;
+			if (va == va_next)
+				va = sva;
+
+			/*
+			 * When a dirty read/write mapping is write protected,
+			 * update the page's dirty field.
+			 */
+			if ((nbits & ATTR_AP(ATTR_AP_RO)) != 0 &&
+			    (l3 & ATTR_SW_MANAGED) != 0 &&
+			    pmap_page_dirty(l3))
+				vm_page_dirty(PHYS_TO_VM_PAGE(l3 & ~ATTR_MASK));
 
 			pmap_set(l3p, nbits);
-			/* XXX: Use pmap_invalidate_range */
-			pmap_invalidate_page(pmap, sva);
 		}
+		if (va != va_next)
+			pmap_invalidate_range(pmap, va, sva);
 	}
 	PMAP_UNLOCK(pmap);
 }
@@ -3397,7 +3456,7 @@ pmap_enter_l2(pmap_t pmap, vm_offset_t va, pd_entry_t new_l2, u_int flags,
 				    lockp) != 0)
 					break;
 			}
-		vm_page_free_pages_toq(&free, false);
+		vm_page_free_pages_toq(&free, true);
 		if (va >= VM_MAXUSER_ADDRESS) {
 			/*
 			 * Both pmap_remove_l2() and pmap_remove_l3() will
@@ -3425,7 +3484,7 @@ pmap_enter_l2(pmap_t pmap, vm_offset_t va, pd_entry_t new_l2, u_int flags,
 				 * Invalidate those entries.
 				 */
 				pmap_invalidate_page(pmap, va);
-				vm_page_free_pages_toq(&free, false);
+				vm_page_free_pages_toq(&free, true);
 			}
 			CTR2(KTR_PMAP,
 			    "pmap_enter_l2: failure for va %#lx in pmap %p",
@@ -3614,7 +3673,7 @@ pmap_enter_quick_locked(pmap_t pmap, vm_offset_t va, vm_page_t m,
 			SLIST_INIT(&free);
 			if (pmap_unwire_l3(pmap, va, mpte, &free)) {
 				pmap_invalidate_page(pmap, va);
-				vm_page_free_pages_toq(&free, false);
+				vm_page_free_pages_toq(&free, true);
 			}
 			mpte = NULL;
 		}
@@ -3708,9 +3767,21 @@ pmap_unwire(pmap_t pmap, vm_offset_t sva, vm_offset_t eva)
 			continue;
 
 		if ((pmap_load(l2) & ATTR_DESCR_MASK) == L2_BLOCK) {
-			l3 = pmap_demote_l2(pmap, l2, sva);
-			if (l3 == NULL)
+			if ((pmap_load(l2) & ATTR_SW_WIRED) == 0)
+				panic("pmap_unwire: l2 %#jx is missing "
+				    "ATTR_SW_WIRED", (uintmax_t)pmap_load(l2));
+
+			/*
+			 * Are we unwiring the entire large page?  If not,
+			 * demote the mapping and fall through.
+			 */
+			if (sva + L2_SIZE == va_next && eva >= va_next) {
+				atomic_clear_64(l2, ATTR_SW_WIRED);
+				pmap_resident_count_dec(pmap, L2_SIZE /
+				    PAGE_SIZE);
 				continue;
+			} else if (pmap_demote_l2(pmap, l2, sva) == NULL)
+				panic("pmap_unwire: demotion failed");
 		}
 		KASSERT((pmap_load(l2) & ATTR_DESCR_MASK) == L2_TABLE,
 		    ("pmap_unwire: Invalid l2 entry after demotion"));
@@ -3726,11 +3797,11 @@ pmap_unwire(pmap_t pmap, vm_offset_t sva, vm_offset_t eva)
 				    "ATTR_SW_WIRED", (uintmax_t)pmap_load(l3));
 
 			/*
-			 * PG_W must be cleared atomically.  Although the pmap
-			 * lock synchronizes access to PG_W, another processor
-			 * could be setting PG_M and/or PG_A concurrently.
+			 * ATTR_SW_WIRED must be cleared atomically.  Although
+			 * the pmap lock synchronizes access to ATTR_SW_WIRED,
+			 * the System MMU may write to the entry concurrently.
 			 */
-			atomic_clear_long(l3, ATTR_SW_WIRED);
+			atomic_clear_64(l3, ATTR_SW_WIRED);
 			pmap->pm_stats.wired_count--;
 		}
 	}
@@ -4064,7 +4135,7 @@ pmap_remove_pages(pmap_t pmap)
 					switch (lvl) {
 					case 1:
 						for (mt = m; mt < &m[L2_SIZE / PAGE_SIZE]; mt++)
-							vm_page_dirty(m);
+							vm_page_dirty(mt);
 						break;
 					case 2:
 						vm_page_dirty(m);
@@ -4097,8 +4168,7 @@ pmap_remove_pages(pmap_t pmap)
 						pmap_resident_count_dec(pmap,1);
 						KASSERT(ml3->wire_count == NL3PG,
 						    ("pmap_remove_pages: l3 page wire count error"));
-						ml3->wire_count = 1;
-						vm_page_unwire_noq(ml3);
+						ml3->wire_count = 0;
 						pmap_add_delayed_free_list(ml3,
 						    &free, FALSE);
 					}
@@ -4136,7 +4206,7 @@ pmap_remove_pages(pmap_t pmap)
 	if (lock != NULL)
 		rw_wunlock(lock);
 	PMAP_UNLOCK(pmap);
-	vm_page_free_pages_toq(&free, false);
+	vm_page_free_pages_toq(&free, true);
 }
 
 /*
@@ -4574,7 +4644,6 @@ small_mappings:
 				 */
 				pmap_remove_l3(pmap, pte, pv->pv_va, tpde,
 				    &free, &lock);
-				pmap_invalidate_page(pmap, pv->pv_va);
 				cleared++;
 				if (pvf == pv)
 					pvf = NULL;
@@ -4596,7 +4665,7 @@ small_mappings:
 	    not_cleared < PMAP_TS_REFERENCED_MAX);
 out:
 	rw_wunlock(lock);
-	vm_page_free_pages_toq(&free, false);
+	vm_page_free_pages_toq(&free, true);
 	return (cleared + not_cleared);
 }
 
@@ -5019,7 +5088,7 @@ pmap_demote_l2_abort(pmap_t pmap, vm_offset_t va, pt_entry_t *l2,
 	SLIST_INIT(&free);
 	(void)pmap_remove_l2(pmap, l2, va, pmap_load(pmap_l1(pmap, va)), &free,
 	    lockp);
-	vm_page_free_pages_toq(&free, false);
+	vm_page_free_pages_toq(&free, true);
 }
 
 /*

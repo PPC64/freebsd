@@ -89,115 +89,6 @@ memsize(void)
 	return (memsz);
 }
 
-
-#ifdef __powerpc64__
-
-struct pvr {
-	uint32_t	mask;
-	uint32_t	val;
-};
-
-struct opt_vec_ignore {
-	char	data[2];
-} __packed;
-
-struct opt_vec4 {
-	char data[3];
-} __packed;
-
-/* byte 2 */
-#define OV5_LPAR	0x80
-#define OV5_SPLPAR	0x40
-#define OV5_DRMEM	0x20
-#define OV5_LP		0x10
-#define OV5_ALPHA_PART	0x08
-#define OV5_DMA_DELAY	0x04
-#define OV5_DONATE_CPU	0x02
-#define OV5_MSI		0x01
-
-/* byte 5 */
-#define OV5_ASSOC	0x80
-#define OV5_PRRN	0x40
-
-/* byte 17 */
-#define OV5_RNG		0x80
-#define OV5_COMP_ENG	0x40
-#define OV5_ENC_ENG	0x20
-
-struct opt_vec5 {
-	char data[27];
-} __packed;
-
-static struct ibm_arch_vec {
-	struct pvr		pvr_list[1];
-	uint32_t		num_opts;
-	struct opt_vec_ignore	vec1;
-	struct opt_vec_ignore	vec2;
-	struct opt_vec_ignore	vec3;
-	struct opt_vec4		vec4;
-	struct opt_vec5		vec5;
-} __packed ibm_arch_vec;
-
-int
-ppc64_set_arch_options(phandle_t root)
-{
-	int err;
-	struct pvr *pvr;
-	struct opt_vec_ignore *ivec;
-	char *vec;
-	int i;
-
-	/* Set a single match-any-PVR terminator */
-	pvr = ibm_arch_vec.pvr_list;
-	pvr->mask = 0;
-	pvr->val = 0xffffffffu;
-
-	/* Set ignored vectors */
-	vec = &ibm_arch_vec.vec1;
-	for (i = 0; i < 3; i++, vec += sizeof(struct opt_vec_ignore)) {
-		vec[0] = 0;	/* length (n - 2) */
-		vec[1] = 0x80;	/* ignore */
-	}
-
-	/* Set Option Vector 4 (can't be ignored) */
-	vec = &ibm_arch_vec.vec4;
-	vec[0] = sizeof(struct opt_vec4) - 2;	/* length */
-	vec[1] = 0;
-	vec[2] = 10;	/* default: 10% */
-
-	/* Set Option Vector 5 */
-	vec = &ibm_arch_vec.vec5;
-	vec[0] = sizeof(struct opt_vec5) - 2;	/* length */
-	vec[1] = 0;	/* don't ignore */
-	vec[2] = OV5_LPAR | OV5_SPLPAR | OV5_LP | OV5_MSI;
-	/* Max processors: 256 (hardcoded for now) */
-	vec[9] = 0;
-	vec[10] = 0;
-	vec[11] = 1;
-	vec[12] = 0;
-	/* LoPAPR Level */
-	vec[13] = 1;
-	vec[14] = 1;
-	/* Platform Facilities */
-	vec[17] = OV5_RNG | OV5_COMP_ENG | OV5_ENC_ENG;
-	/* 21 = 0 - subprocessors not supported */
-	/* 22: DRMEM_V2 */
-	/* 23 = 0 - XICS*/
-	/* 24 = 0 - HPT */
-	/* 25 = 0 - Segment Tables == no, GTSE == no */
-	/* 26 = 0 - Radix: GTSE == no */
-
-	/* Note: 4 actually means 5 option vectors */
-	ibm_arch_vec.num_opts = 4;
-
-	if (root == NULL)
-		root = OF_finddevice("/");
-	err = OF_call_method("ibm,client-architecture-support",
-		root, 1, 1, &ibm_arch_vec);
-	return (err);
-}
-#endif
-
 int
 main(int (*openfirm)(void *))
 {
@@ -280,10 +171,6 @@ main(int (*openfirm)(void *))
 	archsw.arch_readin = ofw_readin;
 	archsw.arch_autoload = ofw_autoload;
 
-#ifdef __powerpc64__
-	/* ppc64_set_arch_options(root); */
-#endif
-
 	interact();				/* doesn't return */
 
 	OF_exit();
@@ -308,5 +195,138 @@ command_memmap(int argc, char **argv)
 {
 
 	ofw_memmap(acells);
+	return (CMD_OK);
+}
+
+COMMAND_SET(setov5, "setov5", "Set LoPAPR Option Vector 5", command_setov5);
+
+struct pvr {
+	uint32_t	mask;
+	uint32_t	val;
+};
+
+struct opt_vec_ignore {
+	char	data[2];
+} __packed;
+
+struct opt_vec4 {
+	char data[3];
+} __packed;
+
+/* byte 2 */
+#define OV5_LPAR	0x80
+#define OV5_SPLPAR	0x40
+#define OV5_DRMEM	0x20
+#define OV5_LP		0x10
+#define OV5_ALPHA_PART	0x08
+#define OV5_DMA_DELAY	0x04
+#define OV5_DONATE_CPU	0x02
+#define OV5_MSI		0x01
+
+/* byte 5 */
+#define OV5_ASSOC	0x80
+#define OV5_PRRN	0x40
+
+/* byte 17 */
+#define OV5_RNG		0x80
+#define OV5_COMP_ENG	0x40
+#define OV5_ENC_ENG	0x20
+
+#define PVR_VER_P8	0x004d0000
+#define PVR_VER_P9	0x004e0000
+#define PVR_VER_MASK	0xffff0000
+
+struct opt_vec5 {
+	char data[27];
+} __packed;
+
+static struct ibm_arch_vec {
+	struct pvr		pvr_list[2];
+	uint32_t		num_opts;
+	struct opt_vec_ignore	vec1;
+	struct opt_vec_ignore	vec2;
+	struct opt_vec_ignore	vec3;
+	struct opt_vec4		vec4;
+	struct opt_vec5		vec5;
+} __packed ibm_arch_vec;
+
+static int
+ppc64_set_arch_options(void)
+{
+	int i, rc;
+	char *vec;
+	struct pvr *pvr;
+	ihandle_t ihandle;
+	cell_t err;
+
+	/* Match POWER8 only */
+	pvr = ibm_arch_vec.pvr_list;
+	pvr->mask = PVR_VER_MASK;
+	pvr->val = PVR_VER_P8;
+
+	/* Insert a match-any-PVR terminator */
+	pvr++;
+	pvr->mask = 0;
+	pvr->val = 0xffffffffu;
+
+	/* Note: 4 actually means 5 option vectors */
+	ibm_arch_vec.num_opts = 3;
+
+	/* Set ignored vectors */
+	vec = ibm_arch_vec.vec1.data;
+	for (i = 0; i < 3; i++, vec += sizeof(struct opt_vec_ignore)) {
+		vec[0] = 0;	/* length (n - 2) */
+		vec[1] = 0x80;	/* ignore */
+	}
+
+	/* Set Option Vector 4 (can't be ignored) */
+	vec = ibm_arch_vec.vec4.data;
+	vec[0] = sizeof(struct opt_vec4) - 2;	/* length */
+	vec[1] = 0;
+	vec[2] = 10;	/* default: 10% */
+
+	/* Set Option Vector 5 */
+	vec = ibm_arch_vec.vec5.data;
+	vec[0] = sizeof(struct opt_vec5) - 2;	/* length */
+	vec[1] = 0;	/* don't ignore */
+	vec[2] = OV5_LPAR | OV5_SPLPAR | OV5_LP | OV5_MSI;
+	/* Max processors: 256 (hardcoded for now) */
+	vec[9] = 0;
+	vec[10] = 0;
+	vec[11] = 1;
+	vec[12] = 0;
+	/* LoPAPR Level */
+	vec[13] = 1;
+	vec[14] = 1;
+	/* Platform Facilities */
+	vec[17] = OV5_RNG | OV5_COMP_ENG | OV5_ENC_ENG;
+	/* 21 = 0 - subprocessors not supported */
+	/* 22: DRMEM_V2 */
+	/* 23 = 0 - XICS*/
+	/* 24 = 0 - HPT */
+	/* 25 = 0 - Segment Tables == no, GTSE == no */
+	/* 26 = 0 - Radix: GTSE == no */
+
+	ihandle = OF_open("/");
+	if (ihandle == -1) {
+		printf("OF_open() error\n");
+		return (-1);
+	}
+
+	if (rc = OF_call_method("ibm,client-architecture-support",
+	    ihandle, 1, 1, &ibm_arch_vec, &err))
+		printf("Failed to call ibm,client-architecture-support method\n");
+	else
+		printf("err=0x%08lX\n", err);
+
+	OF_close(ihandle);
+	return (rc);
+}
+
+
+static int
+command_setov5(int argc __unused, char *argv[] __unused)
+{
+	ppc64_set_arch_options();
 	return (CMD_OK);
 }

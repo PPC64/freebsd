@@ -518,20 +518,3 @@ command_lsdev(int argc, char *argv[])
 	pager_close();
 	return (CMD_OK);
 }
-
-#ifdef __powerpc64__
-COMMAND_SET(setov5, "setov5", "Set LoPAPR Option Vector 5", command_setov5);
-
-extern int
-ppc64_set_arch_options(phandle_t root);
-
-static int
-command_setov5(int argc __unused, char *argv[] __unused)
-{
-	int err;
-
-	err = ppc64_set_arch_options(NULL);
-	printf("err=0x%08X\n");
-	return (CMD_OK);
-}
-#endif

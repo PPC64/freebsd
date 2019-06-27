@@ -232,6 +232,8 @@ struct opt_vec4 {
 #define OV5_COMP_ENG	0x40
 #define OV5_ENC_ENG	0x20
 
+#define PVR_VER_P8E	0x004b0000
+#define PVR_VER_P8NVL	0x004c0000
 #define PVR_VER_P8	0x004d0000
 #define PVR_VER_P9	0x004e0000
 #define PVR_VER_MASK	0xffff0000
@@ -241,8 +243,8 @@ struct opt_vec5 {
 } __packed;
 
 static struct ibm_arch_vec {
-	struct pvr		pvr_list[2];
-	uint32_t		num_opts;
+	struct pvr		pvr_list[5];
+	uint8_t			num_opts;
 	struct opt_vec_ignore	vec1;
 	struct opt_vec_ignore	vec2;
 	struct opt_vec_ignore	vec3;
@@ -259,10 +261,19 @@ ppc64_set_arch_options(void)
 	ihandle_t ihandle;
 	cell_t err;
 
-	/* Match POWER8 only */
+	/* Match POWER8/POWER8E/POWER8NVL/POWER9 */
 	pvr = ibm_arch_vec.pvr_list;
 	pvr->mask = PVR_VER_MASK;
 	pvr->val = PVR_VER_P8;
+	pvr++;
+	pvr->mask = PVR_VER_MASK;
+	pvr->val = PVR_VER_P8E;
+	pvr++;
+	pvr->mask = PVR_VER_MASK;
+	pvr->val = PVR_VER_P8NVL;
+	pvr++;
+	pvr->mask = PVR_VER_MASK;
+	pvr->val = PVR_VER_P9;
 
 	/* Insert a match-any-PVR terminator */
 	pvr++;
@@ -270,7 +281,7 @@ ppc64_set_arch_options(void)
 	pvr->val = 0xffffffffu;
 
 	/* Note: 4 actually means 5 option vectors */
-	ibm_arch_vec.num_opts = 3;
+	ibm_arch_vec.num_opts = 4;
 
 	/* Set ignored vectors */
 	vec = ibm_arch_vec.vec1.data;

@@ -28,7 +28,7 @@
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
-#include <bootstrap.h>
+/* #include <bootstrap.h> */
 #include <openfirm.h>
 #include <stand.h>
 
@@ -169,12 +169,33 @@ static struct ibm_arch_vec {
 	}
 };
 
-static int
+static __inline register_t
+mfpvr(void)
+{
+	register_t value;
+
+	__asm __volatile ("mfpvr %0" : "=r"(value));
+
+	return (value);
+}
+
+int
 ppc64_cas(void)
 {
 	int rc;
 	ihandle_t ihandle;
 	cell_t err;
+
+	/* Perform CAS only for POWER8 and later cores */
+	switch (mfpvr() & PVR_VER_MASK) {
+		case PVR_VER_P8:
+		case PVR_VER_P8E:
+		case PVR_VER_P8NVL:
+		case PVR_VER_P9:
+			break;
+		default:
+			return (0);
+	}
 
 	ihandle = OF_open("/");
 	if (ihandle == -1) {
@@ -190,10 +211,12 @@ ppc64_cas(void)
 		rc = -1;
 	}
 
+	printf("cas: Success!\n");	/* TODO remove */
 	OF_close(ihandle);
 	return (rc);
 }
 
+#if 0
 COMMAND_SET(cas, "cas", "Call Client Architecture Support (CAS)", command_cas);
 
 static int
@@ -202,3 +225,4 @@ command_cas(int argc __unused, char *argv[] __unused)
 	ppc64_cas();
 	return (CMD_OK);
 }
+#endif

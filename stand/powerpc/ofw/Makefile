@@ -27,6 +27,7 @@ SRCS+=		ofwfdt.c
 
 .if ${MACHINE_ARCH} == "powerpc64"
 SRCS+=		cas.c
+CFLAGS+=	-DCAS
 .endif
 
 HELP_FILES=	${FDTSRC}/help.fdt

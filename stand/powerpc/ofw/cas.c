@@ -21,14 +21,11 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- * cas.c: Client Architecture Support options
  */
 
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
-/* #include <bootstrap.h> */
 #include <openfirm.h>
 #include <stand.h>
 
@@ -215,14 +212,3 @@ ppc64_cas(void)
 	OF_close(ihandle);
 	return (rc);
 }
-
-#if 0
-COMMAND_SET(cas, "cas", "Call Client Architecture Support (CAS)", command_cas);
-
-static int
-command_cas(int argc __unused, char *argv[] __unused)
-{
-	ppc64_cas();
-	return (CMD_OK);
-}
-#endif

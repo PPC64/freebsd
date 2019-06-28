@@ -97,7 +97,7 @@ ppc64_autoload(void)
 {
 	const char *cas;
 
-	if ((cas = getenv("cas")) && cas[0] != '0')
+	if ((cas = getenv("cas")) && cas[0] == '1')
 		if (ppc64_cas() != 0)
 			return (-1);
 	return (ofw_autoload());

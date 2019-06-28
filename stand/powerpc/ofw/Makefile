@@ -25,6 +25,10 @@ SRCS+=		ucmpdi2.c
 SRCS+=		ofwfdt.c
 .endif
 
+.if ${MACHINE_ARCH} == "powerpc64"
+SRCS+=		cas.c
+.endif
+
 HELP_FILES=	${FDTSRC}/help.fdt
 
 # Always add MI sources

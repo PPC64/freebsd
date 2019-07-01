@@ -59,15 +59,11 @@ __FBSDID("$FreeBSD$");
 #define OV5_DONATE_CPU		0x02
 #define OV5_MSI			0x01
 
-/* byte 5 */
-#define OV5_ASSOC		0x80
-#define OV5_PRRN		0x40
-
 /* 9-12: max cpus */
 #define OV5_MAX_CPUS(n)		((MAX_CPUS >> (3*8 - (n)*8)) & 0xff)
 
 /* 13-14: LoPAPR Level */
-#define LOPAPR_LEVEL		0x0101
+#define LOPAPR_LEVEL		0x0101	/* 1.1 */
 #define OV5_LOPAPR_LEVEL(n)	((LOPAPR_LEVEL >> (8 - (n)*8)) & 0xff)
 
 /* byte 17: Platform Facilities */
@@ -153,7 +149,7 @@ static struct ibm_arch_vec {
 		OV5_LOPAPR_LEVEL(1),
 		0,	/* Reserved */
 		0,	/* Reserved */
-		OV5_RNG | OV5_COMP_ENG | OV5_ENC_ENG,
+		0,	/* Platform Facilities */
 		0,	/* Reserved */
 		0,	/* Reserved */
 		0,	/* Reserved */		/* 20 */
@@ -208,7 +204,6 @@ ppc64_cas(void)
 		rc = -1;
 	}
 
-	printf("cas: Success!\n");	/* TODO remove */
 	OF_close(ihandle);
 	return (rc);
 }

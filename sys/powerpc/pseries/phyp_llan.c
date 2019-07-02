@@ -235,7 +235,7 @@ llan_attach(device_t dev)
 	sc->ifp->if_snd.ifq_drv_maxlen = LLAN_MAX_TX_PACKETS;
 	IFQ_SET_READY(&sc->ifp->if_snd);
 
-	ether_ifattach(sc->ifp, &sc->mac_address[2]);
+	ether_ifattach(sc->ifp, sc->mac_address);
 
 	/* We don't have link state reporting, so make it always up */
 	if_link_state_change(sc->ifp, LINK_STATE_UP);

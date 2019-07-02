@@ -8,12 +8,6 @@ __<${_this:T}>__:
 
 # -------------------------------------------------------------------
 # 32 bit world
-
-
-# Determines linker used for 32-bit compatibility
-.include "Makefile.libcompat.inc1"
-
-
 .if ${TARGET_ARCH} == "amd64"
 .if empty(TARGET_CPUTYPE)
 LIB32CPUFLAGS=	-march=i686 -mmmx -msse -msse2
@@ -30,7 +24,7 @@ LIB32WMAKEENV=	MACHINE=i386 MACHINE_ARCH=i386 \
 		MACHINE_CPU="i686 mmx sse sse2"
 LIB32WMAKEFLAGS=	\
 		AS="${XAS} --32" \
-		LD="${LIB32LD} -m elf_i386_fbsd -L${LIBCOMPATTMP}/usr/lib32" \
+		LD="${XLD} -m elf_i386_fbsd -L${LIBCOMPATTMP}/usr/lib32" \
 		OBJCOPY="${XOBJCOPY}"
 
 .elif ${TARGET_ARCH} == "powerpc64"
@@ -39,24 +33,10 @@ LIB32CPUFLAGS=	-mcpu=powerpc
 .else
 LIB32CPUFLAGS=	-mcpu=${TARGET_CPUTYPE}
 .endif
-
-.if ${WANT_COMPILER_TYPE} == gcc || \
-    (defined(X_COMPILER_TYPE) && ${X_COMPILER_TYPE} == gcc)
 LIB32CPUFLAGS+=	-m32
-.else
-LIB32CPUFLAGS+=	-target powerpc-unknown-freebsd13.0
-
-.if ${LIB32LD} == "ld.bfd"
-LIB32CPUFLAGS+= -fuse-ld=bfd
-.else
-LIB32CPUFLAGS+= -fuse-ld=${LIB32LD}
-.endif
-
-.endif
-
 LIB32WMAKEENV=	MACHINE=powerpc MACHINE_ARCH=powerpc
 LIB32WMAKEFLAGS=	\
-		LD="${LIB32LD} -m elf32ppc_fbsd" \
+		LD="${XLD} -m elf32ppc_fbsd" \
 		OBJCOPY="${XOBJCOPY}"
 
 .elif ${TARGET_ARCH:Mmips64*} != ""
@@ -77,9 +57,9 @@ LIB32CPUFLAGS=  -target mips-unknown-freebsd13.0
 LIB32CPUFLAGS+= -mabi=32
 LIB32WMAKEENV=	MACHINE=mips MACHINE_ARCH=mips
 .if ${TARGET_ARCH:Mmips64el*} != ""
-LIB32WMAKEFLAGS= LD="${LIB32LD} -m elf32ltsmip_fbsd"
+LIB32WMAKEFLAGS= LD="${XLD} -m elf32ltsmip_fbsd"
 .else
-LIB32WMAKEFLAGS= LD="${LIB32LD} -m elf32btsmip_fbsd"
+LIB32WMAKEFLAGS= LD="${XLD} -m elf32btsmip_fbsd"
 .endif
 LIB32WMAKEFLAGS+= OBJCOPY="${XOBJCOPY}"
 .endif

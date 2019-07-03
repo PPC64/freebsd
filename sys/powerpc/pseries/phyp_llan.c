@@ -170,8 +170,7 @@ llan_attach(device_t dev)
 	 * instead of 8 (sizeof(sc->mac_address)), then its value must be
 	 * shifted 2 bytes to the right. */
 	if (len == ETHER_ADDR_LEN) {
-		for (i = sizeof(sc->mac_address) - 1; i > 1; i--)
-			sc->mac_address[i] = sc->mac_address[i - 2];
+		bcopy(sc->mac_address, &sc->mac_address[2], len);
 		/* Zero out the first 2 bytes. */
 		bzero(sc->mac_address, 2);
 	}

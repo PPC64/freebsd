@@ -266,7 +266,7 @@ static __always_inline void
 vm_pageout_collect_batch(struct scan_state *ss, const bool dequeue)
 {
 	struct vm_pagequeue *pq;
-	vm_page_t m, marker;
+	vm_page_t m, marker, n;
 
 	marker = ss->marker;
 	pq = ss->pq;
@@ -277,7 +277,8 @@ vm_pageout_collect_batch(struct scan_state *ss, const bool dequeue)
 	vm_pagequeue_lock(pq);
 	for (m = TAILQ_NEXT(marker, plinks.q); m != NULL &&
 	    ss->scanned < ss->maxscan && ss->bq.bq_cnt < VM_BATCHQUEUE_SIZE;
-	    m = TAILQ_NEXT(m, plinks.q), ss->scanned++) {
+	    m = n, ss->scanned++) {
+		n = TAILQ_NEXT(m, plinks.q);
 		if ((m->flags & PG_MARKER) == 0) {
 			KASSERT((m->aflags & PGA_ENQUEUED) != 0,
 			    ("page %p not enqueued", m));
@@ -1971,7 +1972,7 @@ vm_pageout_init_domain(int domain)
 		vmd->vmd_free_min = 4 + (vmd->vmd_page_count - 1024) / 200;
 	else
 		vmd->vmd_free_min = 4;
-	vmd->vmd_pageout_free_min = (2*MAXBSIZE)/PAGE_SIZE +
+	vmd->vmd_pageout_free_min = 2 * MAXBSIZE / PAGE_SIZE +
 	    vmd->vmd_interrupt_free_min;
 	vmd->vmd_free_reserved = vm_pageout_page_count +
 	    vmd->vmd_pageout_free_min + (vmd->vmd_page_count / 768);

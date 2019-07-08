@@ -3134,8 +3134,8 @@ pmap_enter(pmap_t pmap, vm_offset_t va, vm_page_t m, vm_prot_t prot,
 	pt_entry_t new_l3, orig_l3;
 	pt_entry_t *l2, *l3;
 	pv_entry_t pv;
-	vm_paddr_t opa, pa, l1_pa, l2_pa, l3_pa;
-	vm_page_t mpte, om, l1_m, l2_m, l3_m;
+	vm_paddr_t opa, pa;
+	vm_page_t mpte, om;
 	boolean_t nosleep;
 	int lvl, rv;
 
@@ -3159,7 +3159,6 @@ pmap_enter(pmap_t pmap, vm_offset_t va, vm_page_t m, vm_prot_t prot,
 	CTR2(KTR_PMAP, "pmap_enter: %.16lx -> %.16lx", va, pa);
 
 	lock = NULL;
-	mpte = NULL;
 	PMAP_LOCK(pmap);
 	if (psind == 1) {
 		/* Assert the required virtual and physical alignment. */
@@ -3169,9 +3168,22 @@ pmap_enter(pmap_t pmap, vm_offset_t va, vm_page_t m, vm_prot_t prot,
 		    flags, m, &lock);
 		goto out;
 	}
+	mpte = NULL;
 
+	/*
+	 * In the case that a page table page is not
+	 * resident, we are creating it here.
+	 */
+retry:
 	pde = pmap_pde(pmap, va, &lvl);
-	if (pde != NULL && lvl == 1) {
+	if (pde != NULL && lvl == 2) {
+		l3 = pmap_l2_to_l3(pde, va);
+		if (va < VM_MAXUSER_ADDRESS && mpte == NULL) {
+			mpte = PHYS_TO_VM_PAGE(pmap_load(pde) & ~ATTR_MASK);
+			mpte->wire_count++;
+		}
+		goto havel3;
+	} else if (pde != NULL && lvl == 1) {
 		l2 = pmap_l1_to_l2(pde, va);
 		if ((pmap_load(l2) & ATTR_DESCR_MASK) == L2_BLOCK &&
 		    (l3 = pmap_demote_l2_locked(pmap, l2, va, &lock)) != NULL) {
@@ -3183,83 +3195,26 @@ pmap_enter(pmap_t pmap, vm_offset_t va, vm_page_t m, vm_prot_t prot,
 			}
 			goto havel3;
 		}
+		/* We need to allocate an L3 table. */
 	}
-
 	if (va < VM_MAXUSER_ADDRESS) {
 		nosleep = (flags & PMAP_ENTER_NOSLEEP) != 0;
-		mpte = pmap_alloc_l3(pmap, va, nosleep ? NULL : &lock);
+
+		/*
+		 * We use _pmap_alloc_l3() instead of pmap_alloc_l3() in order
+		 * to handle the possibility that a superpage mapping for "va"
+		 * was created while we slept.
+		 */
+		mpte = _pmap_alloc_l3(pmap, pmap_l2_pindex(va),
+		    nosleep ? NULL : &lock);
 		if (mpte == NULL && nosleep) {
 			CTR0(KTR_PMAP, "pmap_enter: mpte == NULL");
-			if (lock != NULL)
-				rw_wunlock(lock);
-			PMAP_UNLOCK(pmap);
-			return (KERN_RESOURCE_SHORTAGE);
+			rv = KERN_RESOURCE_SHORTAGE;
+			goto out;
 		}
-		pde = pmap_pde(pmap, va, &lvl);
-		KASSERT(pde != NULL,
-		    ("pmap_enter: Invalid page entry, va: 0x%lx", va));
-		KASSERT(lvl == 2,
-		    ("pmap_enter: Invalid level %d", lvl));
-	} else {
-		/*
-		 * If we get a level 2 pde it must point to a level 3 entry
-		 * otherwise we will need to create the intermediate tables
-		 */
-		if (lvl < 2) {
-			switch (lvl) {
-			default:
-			case -1:
-				/* Get the l0 pde to update */
-				pde = pmap_l0(pmap, va);
-				KASSERT(pde != NULL, ("..."));
-
-				l1_m = vm_page_alloc(NULL, 0, VM_ALLOC_NORMAL |
-				    VM_ALLOC_NOOBJ | VM_ALLOC_WIRED |
-				    VM_ALLOC_ZERO);
-				if (l1_m == NULL)
-					panic("pmap_enter: l1 pte_m == NULL");
-				if ((l1_m->flags & PG_ZERO) == 0)
-					pmap_zero_page(l1_m);
-
-				l1_pa = VM_PAGE_TO_PHYS(l1_m);
-				pmap_load_store(pde, l1_pa | L0_TABLE);
-				/* FALLTHROUGH */
-			case 0:
-				/* Get the l1 pde to update */
-				pde = pmap_l1_to_l2(pde, va);
-				KASSERT(pde != NULL, ("..."));
-
-				l2_m = vm_page_alloc(NULL, 0, VM_ALLOC_NORMAL |
-				    VM_ALLOC_NOOBJ | VM_ALLOC_WIRED |
-				    VM_ALLOC_ZERO);
-				if (l2_m == NULL)
-					panic("pmap_enter: l2 pte_m == NULL");
-				if ((l2_m->flags & PG_ZERO) == 0)
-					pmap_zero_page(l2_m);
-
-				l2_pa = VM_PAGE_TO_PHYS(l2_m);
-				pmap_load_store(pde, l2_pa | L1_TABLE);
-				/* FALLTHROUGH */
-			case 1:
-				/* Get the l2 pde to update */
-				pde = pmap_l1_to_l2(pde, va);
-				KASSERT(pde != NULL, ("..."));
-
-				l3_m = vm_page_alloc(NULL, 0, VM_ALLOC_NORMAL |
-				    VM_ALLOC_NOOBJ | VM_ALLOC_WIRED |
-				    VM_ALLOC_ZERO);
-				if (l3_m == NULL)
-					panic("pmap_enter: l3 pte_m == NULL");
-				if ((l3_m->flags & PG_ZERO) == 0)
-					pmap_zero_page(l3_m);
-
-				l3_pa = VM_PAGE_TO_PHYS(l3_m);
-				pmap_load_store(pde, l3_pa | L2_TABLE);
-				break;
-			}
-		}
-	}
-	l3 = pmap_l2_to_l3(pde, va);
+		goto retry;
+	} else
+		panic("pmap_enter: missing L3 table for kernel va %#lx", va);
 
 havel3:
 	orig_l3 = pmap_load(l3);
@@ -3875,12 +3830,153 @@ pmap_unwire(pmap_t pmap, vm_offset_t sva, vm_offset_t eva)
  *	in the destination map.
  *
  *	This routine is only advisory and need not do anything.
+ *
+ *	Because the executable mappings created by this routine are copied,
+ *	it should not have to flush the instruction cache.
  */
-
 void
 pmap_copy(pmap_t dst_pmap, pmap_t src_pmap, vm_offset_t dst_addr, vm_size_t len,
     vm_offset_t src_addr)
 {
+	struct rwlock *lock;
+	struct spglist free;
+	pd_entry_t *l0, *l1, *l2, srcptepaddr;
+	pt_entry_t *dst_pte, ptetemp, *src_pte;
+	vm_offset_t addr, end_addr, va_next;
+	vm_page_t dst_l2pg, dstmpte, srcmpte;
+
+	if (dst_addr != src_addr)
+		return;
+	end_addr = src_addr + len;
+	lock = NULL;
+	if (dst_pmap < src_pmap) {
+		PMAP_LOCK(dst_pmap);
+		PMAP_LOCK(src_pmap);
+	} else {
+		PMAP_LOCK(src_pmap);
+		PMAP_LOCK(dst_pmap);
+	}
+	for (addr = src_addr; addr < end_addr; addr = va_next) {
+		l0 = pmap_l0(src_pmap, addr);
+		if (pmap_load(l0) == 0) {
+			va_next = (addr + L0_SIZE) & ~L0_OFFSET;
+			if (va_next < addr)
+				va_next = end_addr;
+			continue;
+		}
+		l1 = pmap_l0_to_l1(l0, addr);
+		if (pmap_load(l1) == 0) {
+			va_next = (addr + L1_SIZE) & ~L1_OFFSET;
+			if (va_next < addr)
+				va_next = end_addr;
+			continue;
+		}
+		va_next = (addr + L2_SIZE) & ~L2_OFFSET;
+		if (va_next < addr)
+			va_next = end_addr;
+		l2 = pmap_l1_to_l2(l1, addr);
+		srcptepaddr = pmap_load(l2);
+		if (srcptepaddr == 0)
+			continue;
+		if ((srcptepaddr & ATTR_DESCR_MASK) == L2_BLOCK) {
+			if ((addr & L2_OFFSET) != 0 ||
+			    addr + L2_SIZE > end_addr)
+				continue;
+			dst_l2pg = pmap_alloc_l2(dst_pmap, addr, NULL);
+			if (dst_l2pg == NULL)
+				break;
+			l2 = (pd_entry_t *)
+			    PHYS_TO_DMAP(VM_PAGE_TO_PHYS(dst_l2pg));
+			l2 = &l2[pmap_l2_index(addr)];
+			if (pmap_load(l2) == 0 &&
+			    ((srcptepaddr & ATTR_SW_MANAGED) == 0 ||
+			    pmap_pv_insert_l2(dst_pmap, addr, srcptepaddr,
+			    PMAP_ENTER_NORECLAIM, &lock))) {
+				(void)pmap_load_store(l2, srcptepaddr &
+				    ~ATTR_SW_WIRED);
+				pmap_resident_count_inc(dst_pmap, L2_SIZE /
+				    PAGE_SIZE);
+				atomic_add_long(&pmap_l2_mappings, 1);
+			} else
+				dst_l2pg->wire_count--;
+			continue;
+		}
+		KASSERT((srcptepaddr & ATTR_DESCR_MASK) == L2_TABLE,
+		    ("pmap_copy: invalid L2 entry"));
+		srcptepaddr &= ~ATTR_MASK;
+		srcmpte = PHYS_TO_VM_PAGE(srcptepaddr);
+		KASSERT(srcmpte->wire_count > 0,
+		    ("pmap_copy: source page table page is unused"));
+		if (va_next > end_addr)
+			va_next = end_addr;
+		src_pte = (pt_entry_t *)PHYS_TO_DMAP(srcptepaddr);
+		src_pte = &src_pte[pmap_l3_index(addr)];
+		dstmpte = NULL;
+		for (; addr < va_next; addr += PAGE_SIZE, src_pte++) {
+			ptetemp = pmap_load(src_pte);
+
+			/*
+			 * We only virtual copy managed pages.
+			 */
+			if ((ptetemp & ATTR_SW_MANAGED) == 0)
+				continue;
+
+			if (dstmpte != NULL) {
+				KASSERT(dstmpte->pindex == pmap_l2_pindex(addr),
+				    ("dstmpte pindex/addr mismatch"));
+				dstmpte->wire_count++;
+			} else if ((dstmpte = pmap_alloc_l3(dst_pmap, addr,
+			    NULL)) == NULL)
+				goto out;
+			dst_pte = (pt_entry_t *)
+			    PHYS_TO_DMAP(VM_PAGE_TO_PHYS(dstmpte));
+			dst_pte = &dst_pte[pmap_l3_index(addr)];
+			if (pmap_load(dst_pte) == 0 &&
+			    pmap_try_insert_pv_entry(dst_pmap, addr,
+			    PHYS_TO_VM_PAGE(ptetemp & ~ATTR_MASK), &lock)) {
+				/*
+				 * Clear the wired, modified, and accessed
+				 * (referenced) bits during the copy.
+				 *
+				 * XXX not yet
+				 */
+				(void)pmap_load_store(dst_pte, ptetemp &
+				    ~ATTR_SW_WIRED);
+				pmap_resident_count_inc(dst_pmap, 1);
+			} else {
+				SLIST_INIT(&free);
+				if (pmap_unwire_l3(dst_pmap, addr, dstmpte,
+				    &free)) {
+					/*
+					 * Although "addr" is not mapped,
+					 * paging-structure caches could
+					 * nonetheless have entries that refer
+					 * to the freed page table pages.
+					 * Invalidate those entries.
+					 *
+					 * XXX redundant invalidation
+					 */
+					pmap_invalidate_page(dst_pmap, addr);
+					vm_page_free_pages_toq(&free, true);
+				}
+				goto out;
+			}
+			/* Have we copied all of the valid mappings? */ 
+			if (dstmpte->wire_count >= srcmpte->wire_count)
+				break;
+		}
+	}
+out:
+	/*
+	 * XXX This barrier may not be needed because the destination pmap is
+	 * not active.
+	 */
+	dsb(ishst);
+
+	if (lock != NULL)
+		rw_wunlock(lock);
+	PMAP_UNLOCK(src_pmap);
+	PMAP_UNLOCK(dst_pmap);
 }
 
 /*

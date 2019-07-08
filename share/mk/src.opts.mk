@@ -298,7 +298,7 @@ __DEFAULT_NO_OPTIONS+=LLVM_TARGET_RISCV
 
 .if ${COMPILER_FEATURES:Mc++11} && (${__T} == "aarch64" || \
     ${__T} == "amd64" || ${__TT} == "arm" || ${__T} == "i386" || \
-    ${__T} == "powerpc64")
+    ${__T} == "powerpc" || ${__T} == "powerpc64")
 # Clang is enabled, and will be installed as the default /usr/bin/cc.
 __DEFAULT_YES_OPTIONS+=CLANG CLANG_BOOTSTRAP CLANG_IS_CC LLD
 __DEFAULT_NO_OPTIONS+=GCC GCC_BOOTSTRAP GNUCXX GPL_DTC
@@ -321,7 +321,8 @@ BROKEN_OPTIONS+=BINUTILS BINUTILS_BOOTSTRAP GCC GCC_BOOTSTRAP GDB
 BROKEN_OPTIONS+=OFED
 .endif
 .if ${__T} == "aarch64" || ${__T} == "amd64" || ${__T} == "i386" || \
-    ${__T:Mriscv*} != "" || ${__TT} == "mips" || ${__T} == "powerpc64"
+    ${__T:Mriscv*} != "" || ${__TT} == "mips" || ${__T} == "powerpc" || \
+    ${__T} == "powerpc64"
 __DEFAULT_YES_OPTIONS+=LLVM_LIBUNWIND
 .else
 __DEFAULT_NO_OPTIONS+=LLVM_LIBUNWIND
@@ -332,8 +333,7 @@ __DEFAULT_YES_OPTIONS+=LLD_BOOTSTRAP LLD_IS_LD
 .else
 __DEFAULT_NO_OPTIONS+=LLD_BOOTSTRAP LLD_IS_LD
 .endif
-.if ${__T} == "aarch64" || ${__T} == "amd64" || ${__T} == "i386" || \
-    ${__T} == "powerpc64"
+.if ${__T} == "aarch64" || ${__T} == "amd64" || ${__T} == "i386"
 __DEFAULT_YES_OPTIONS+=LLDB
 .else
 __DEFAULT_NO_OPTIONS+=LLDB

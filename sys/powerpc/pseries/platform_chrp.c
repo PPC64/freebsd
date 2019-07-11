@@ -148,8 +148,7 @@ chrp_attach(platform_t plat)
 		realmaxaddr = 0;
 		for (i = 0; i < nphys; i++) {
 			off = phys[i].mr_start + phys[i].mr_size;
-			if (off > realmaxaddr)
-				realmaxaddr = off;
+			realmaxaddr = MAX(off, realmaxaddr);
 		}
 
 		pmap_mmu_install("mmu_phyp", BUS_PROBE_SPECIFIC);

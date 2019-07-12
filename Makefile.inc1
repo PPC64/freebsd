@@ -802,6 +802,7 @@ XCFLAGS+=	${BFLAGS}
     ${TARGET_ARCH} == "powerpc64" || ${TARGET_ARCH:Mmips64*} != "")
 LIBCOMPAT= 32
 .include "Makefile.libcompat"
+CROSSENV+=LIB32LD=${LIB32LD}
 .elif ${MK_LIBSOFT} != "no" && ${TARGET_ARCH:Marmv[67]*} != ""
 LIBCOMPAT= SOFT
 .include "Makefile.libcompat"

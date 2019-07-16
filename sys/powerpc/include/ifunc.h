@@ -42,8 +42,8 @@
 	uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,		\
 	uint64_t))args __used;						\
     qual ret_type name args __attribute__((ifunc(#name "_resolver")));	\
-    static ret_type (*name##_resolver(uint32_t cpu_features,		\
-	uint32_t cpu_features2, uint64_t _arg3 __unused,		\
+    static ret_type (*name##_resolver(uint32_t hwcap,			\
+	uint32_t hwcap2, uint64_t _arg3 __unused,			\
 	uint64_t _arg4 __unused, uint64_t _arg5 __unused,		\
 	uint64_t _arg6 __unused, uint64_t _arg7 __unused,		\
 	uint64_t _arg8 __unused))args

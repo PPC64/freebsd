@@ -172,12 +172,28 @@ mfpvr(void)
 	return (value);
 }
 
+static __inline int
+ppc64_hv(void)
+{
+	int hv;
+
+	/* PSL_HV is bit 3 of 64-bit MSR */
+	__asm __volatile ("mfmsr %0\t\n"
+		"rldicl %0,%0,4,63" : "=r"(hv));
+
+	return (hv);
+}
+
 int
 ppc64_cas(void)
 {
 	int rc;
 	ihandle_t ihandle;
 	cell_t err;
+
+	/* Skip CAS when running on PowerNV */
+	if (!ppc64_hv())
+		return (0);
 
 	/* Perform CAS only for POWER8 and later cores */
 	switch (mfpvr() & PVR_VER_MASK) {

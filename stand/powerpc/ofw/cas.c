@@ -178,7 +178,7 @@ ppc64_hv(void)
 	int hv;
 
 	/* PSL_HV is bit 3 of 64-bit MSR */
-	__asm __volatile ("mfmsr %0\t\n"
+	__asm __volatile ("mfmsr %0\n\t"
 		"rldicl %0,%0,4,63" : "=r"(hv));
 
 	return (hv);

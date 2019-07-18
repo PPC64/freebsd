@@ -15,7 +15,7 @@ __<${_this:T}>__:
 # so falling back to ld.bfd.
 .if "${TARGET_ARCH}" == "powerpc64" && "${LINKER_TYPE}" == "lld"
 
-.if defined(HOST_ARCH) && "${HOST_ARCH}" != "${TARGET_ARCH}"	# cross build
+.if "${_HOST_ARCH}" != "${TARGET_ARCH}"		# cross build
 
 .if defined(CROSS_TOOLCHAIN)			# with toolchain file
 

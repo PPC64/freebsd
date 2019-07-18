@@ -12,23 +12,28 @@ __<${_this:T}>__:
 
 # Determines linker used for 32-bit compatibility
 # Currently LLD support for PowerPC 32-bit is not complete,
-# so falling back to ld.bfd
-.if ${TARGET_ARCH} == "powerpc64" &&  "${LINKER_TYPE}" == "lld"
+# so falling back to ld.bfd.
+.if "${TARGET_ARCH}" == "powerpc64" && "${LINKER_TYPE}" == "lld"
 
-# cross build with toolchain file and NOT defined binutils prefix
-.if ("${HOST_ARCH}" != "${TARGET_ARCH}") && defined(CROSS_TOOLCHAIN) && !defined(CROSS_BINUTILS_PREFIX)
-.info 32 bit binaries on PowerPC64 requires binutils linker ld.bfd. Please set CROSS_BINUTILS_PREFIX.
+.if defined(HOST_ARCH) && "${HOST_ARCH}" != "${TARGET_ARCH}"	# cross build
 
-# cross build with toolchain file and defined binutils prefix
-.elif ("${HOST_ARCH}" != "${TARGET_ARCH}") && defined(CROSS_TOOLCHAIN) && defined(CROSS_BINUTILS_PREFIX)
+.if defined(CROSS_TOOLCHAIN)			# with toolchain file
+
+.if defined(CROSS_BINUTILS_PREFIX)
 LIB32LD?=${LOCALBASE}/bin/${CROSS_BINUTILS_PREFIX}-ld.bfd
+.else
+# Binutils prefix must be defined
+# Note: Just warn because this is required for 32-bit stuff only
+.warning 32-bit binaries on PowerPC64 requires binutils linker ld.bfd.\
+Please set CROSS_BINUTILS_PREFIX.
+.endif
 
-# cross build without using toolchain file (using builtin cross toolchain)
-.elif ("${HOST_ARCH}" != "${TARGET_ARCH}")
+.else						# without toolchain file
 LIB32LD?=${WORLDTMP}/usr/bin/ld.bfd
+.endif
 
-.else # Native build
-LIB32LD?=ld.bfd
+.else						# native build
+LIB32LD?=/usr/bin/ld.bfd
 .endif
 
 .info LIB32: using ${LIB32LD} as linker for LIB32
@@ -68,14 +73,7 @@ LIB32CPUFLAGS=	-mcpu=${TARGET_CPUTYPE}
     (defined(X_COMPILER_TYPE) && ${X_COMPILER_TYPE} == gcc)
 LIB32CPUFLAGS+=	-m32
 .else
-LIB32CPUFLAGS+=	-target powerpc-unknown-freebsd13.0
-
-.if ${LIB32LD} == "ld.bfd"
-LIB32CPUFLAGS+= -fuse-ld=bfd
-.else
-LIB32CPUFLAGS+= -fuse-ld=${LIB32LD}
-.endif
-
+LIB32CPUFLAGS+=	-target powerpc-unknown-freebsd13.0 -fuse-ld=${LIB32LD}
 .endif
 
 LIB32WMAKEENV=	MACHINE=powerpc MACHINE_ARCH=powerpc

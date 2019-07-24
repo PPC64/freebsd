@@ -391,15 +391,8 @@ alloc_pvo_entry(int bootstrap, int flags)
 		    atomic_fetchadd_int(&moea64_bpvo_pool_index, 1)];
 		bzero(pvo, sizeof(*pvo));
 		pvo->pvo_vaddr = PVO_BOOTSTRAP;
-	} else {
-		for (;;) {
-			pvo = uma_zalloc(moea64_pvo_zone, flags | M_ZERO);
-
-			if (pvo != NULL || (flags & M_NOWAIT))
-				break;
-			vm_wait(NULL);
-		}
-	}
+	} else
+		pvo = uma_zalloc(moea64_pvo_zone, flags | M_ZERO);
 
 	return (pvo);
 }
@@ -1867,9 +1860,7 @@ moea64_kenter_attr(mmu_t mmu, vm_offset_t va, vm_paddr_t pa, vm_memattr_t ma)
 	int		error;	
 	struct pvo_entry *pvo, *oldpvo;
 
-	pvo = alloc_pvo_entry(0, M_NOWAIT);
-	if (pvo == NULL)
-		panic("moea64_kenter_attr: failed to alloc pvo");
+	pvo = alloc_pvo_entry(0, M_WAITOK);
 	pvo->pvo_pte.prot = VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE;
 	pvo->pvo_pte.pa = (pa & ~ADDR_POFF) | moea64_calc_wimg(pa, ma);
 	pvo->pvo_vaddr |= PVO_WIRED;

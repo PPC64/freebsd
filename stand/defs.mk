@@ -94,7 +94,10 @@ CFLAGS+= -DLOADER_DISK_SUPPORT
 .if ${MACHINE_ARCH} == "powerpc64"
 CFLAGS+=	-m32 -mcpu=powerpc
 # Use same linker used to link 32 bit binaries
-.if "${LINKER_TYPE}" == "lld"
+.if "${COMPILER_TYPE}" == "clang"
+.if !defined(LIB32LD)
+.error LIB32LD must be defined when building stand.
+.endif
 CFLAGS+=	-fuse-ld=${LIB32LD}
 .endif
 .endif

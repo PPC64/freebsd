@@ -1,0 +1,4 @@
+# $FreeBSD$
+
+MDSRCS+= \
+	strncpy.S

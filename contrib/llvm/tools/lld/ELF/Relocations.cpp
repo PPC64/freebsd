@@ -1003,7 +1003,8 @@ static void scanReloc(InputSectionBase &Sec, OffsetGetter &GetOffset, RelTy *&I,
   if (isRelExprOneOf<R_HINT, R_NONE>(Expr))
     return;
 
-  if (Sym.isGnuIFunc() && !Config->ZText && Config->WarnIfuncTextrel) {
+  if (Sym.isGnuIFunc() && !Config->ZIfuncnoplt && !Config->ZText &&
+      Config->WarnIfuncTextrel) {
     warn("using ifunc symbols when text relocations are allowed may produce "
          "a binary that will segfault, if the object file is linked with "
          "old version of glibc (glibc 2.28 and earlier). If this applies to "

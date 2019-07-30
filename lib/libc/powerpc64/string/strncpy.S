@@ -98,7 +98,7 @@ ENTRY(strncpy)
 	nop
 	b	.Lexit
 
-/* copy remaining (< 8) bytes, exit if 0 is found before */
+/* copy remaining (< 8) bytes */
 .Lbyte_copy:
 	cmpdi	%r5,0
 	beq	.Lexit
@@ -109,8 +109,14 @@ ENTRY(strncpy)
 	lbzu	%r7,1(%r4)
 	stbu	%r7,1(%r3)
 	cmpdi	%r7,0
-	beq	.Lexit
+	/* 0 found: zero out remaining bytes */
+	beq	.Lbyte_copy_zero
 	bdnz	.Lbyte_copy_loop
+	b	.Lexit
+.Lbyte_copy_zero_loop:
+	stbu	%r6,1(%r3)
+.Lbyte_copy_zero:
+	bdnz	.Lbyte_copy_zero_loop
 
 .Lexit:
 	/* epilogue */

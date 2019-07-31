@@ -29,7 +29,7 @@
 #include <machine/asm.h>
 __FBSDID("$FreeBSD$");
 
-ENTRY(strncpy)
+ENTRY(strncpy_arch_2_05)
 	stdu	%r1,-40(%r1)
 	mflr	%r0
 	std	%r0,16(%r1)
@@ -126,6 +126,6 @@ ENTRY(strncpy)
 	addi	%r1,%r1,40
 	blr
 
-END(strncpy)
+END(strncpy_arch_2_05)
 
 	.section .note.GNU-stack,"",%progbits

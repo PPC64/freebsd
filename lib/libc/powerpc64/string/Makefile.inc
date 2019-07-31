@@ -1,4 +1,5 @@
 # $FreeBSD$
 
 MDSRCS+= \
-	strncpy.S
+	strncpy_arch_2_05.S \
+	strncpy.c

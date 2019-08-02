@@ -44,12 +44,13 @@ __FBSDID("$FreeBSD$");
  * Copy src to dst, truncating or null-padding to always copy n bytes.
  * Return dst.
  */
-#ifdef STRNCPY_C_NAME
-static
+#ifdef WEAK_STRNCPY
+__weak_reference(__strncpy, strncpy);
 #endif
+
 char *
-#ifdef STRNCPY_C_NAME
-STRNCPY_C_NAME
+#ifdef WEAK_STRNCPY
+__strncpy
 #else
 strncpy
 #endif

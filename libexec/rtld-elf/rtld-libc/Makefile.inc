@@ -66,8 +66,7 @@ _libc_other_objects+=syncicache umoddi3 udivdi3 qdivrem
 _libc_other_objects+=abs
 .elif ${LIBC_ARCH} == "powerpc64"
 # ppc64 needs __syncicache for reloc.c
-# and strncpy_arch_2_05 for strncpy ifunc
-_libc_other_objects+=syncicache strncpy_arch_2_05
+_libc_other_objects+=syncicache
 .elif ${LIBC_ARCH} == "mips"
 # 32-bit MIPS needs __umoddi3+__udivdi3 for rtld_printf.c
 .if ${MACHINE_ARCH:Mmipsn32*} == "" && ${MACHINE_ARCH:Mmips64*} == ""

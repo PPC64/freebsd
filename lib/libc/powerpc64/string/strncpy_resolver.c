@@ -29,5 +29,20 @@
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
-#define WEAK_STRNCPY
-#include "../../string/strncpy.c"
+#include <machine/cpu.h>
+#include <machine/ifunc.h>
+
+char *
+__strncpy_arch_2_05(char * restrict dst, const char * restrict src, size_t len);
+
+char *
+__strncpy(char * restrict dst, const char * restrict src, size_t len);
+
+DEFINE_UIFUNC(, char *, strncpy,
+    (char * restrict, const char * restrict, size_t))
+{
+	if (hwcap & PPC_FEATURE_ARCH_2_05)
+		return (__strncpy_arch_2_05);
+	else
+		return (__strncpy);
+}

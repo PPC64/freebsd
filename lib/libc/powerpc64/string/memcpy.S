@@ -34,21 +34,16 @@ __FBSDID("$FreeBSD$");
 	RCSID("$NetBSD: bcopy.S,v 1.0 2019/03/06 13:37:42 lbianc Exp $")
 #endif
 
-#ifdef USE_VSX
-#define MEMCPY_BUILD_FUNCTION_NAME(name) __ ## name ## _vsx
-#define MEMCPY_ALIGNMENT_SIZE_BITS 6
-#define MEMCPY_ALIGNMENT_BYTES (1 << MEMCPY_ALIGNMENT_SIZE_BITS)
-#define MEMCPY_ALIGNMENT_MASK (MEMCPY_ALIGNMENT_BYTES - 1)
-#else
-#define MEMCPY_BUILD_FUNCTION_NAME(name) __ ## name
+#ifndef FN_NAME
+#define FN_NAME __memcpy
 #define MEMCPY_ALIGNMENT_SIZE_BITS 4
-#define MEMCPY_ALIGNMENT_BYTES (1 << MEMCPY_ALIGNMENT_SIZE_BITS)
-#define MEMCPY_ALIGNMENT_MASK (MEMCPY_ALIGNMENT_BYTES - 1)
 #endif
 
-#define MEMCPY_FUNCTION_NAME MEMCPY_BUILD_FUNCTION_NAME(memcpy)
+#define MEMCPY_ALIGNMENT_BYTES (1 << MEMCPY_ALIGNMENT_SIZE_BITS)
+#define MEMCPY_ALIGNMENT_MASK (MEMCPY_ALIGNMENT_BYTES - 1)
 
-ENTRY(MEMCPY_FUNCTION_NAME)
+
+ENTRY(FN_NAME)
 	cmpdi	%r5, 0		/* len == 0? nothing to do : continue */
 	beqlr-
 
@@ -72,32 +67,8 @@ ENTRY(MEMCPY_FUNCTION_NAME)
 	xor.	%r5, %r5, %r7
 	beq	.Lcopy_remaining_fix_index_byte
 
-#ifdef USE_VSX
-	/* Load CTR with quantity of blocks */
-	srdi	%r5, %r5, MEMCPY_ALIGNMENT_SIZE_BITS
-	mtctr	%r5
-	/* Prepare indexes to load and store data */
-	xor	%r6, %r6, %r6
-	li	%r9,  16
-	li	%r10, 32
-	li	%r11, 48
-.Lcopy_vsx_loop:
-	lxvd2x	%vs6, %r6,  %r4
-	lxvd2x	%vs7, %r9,  %r4
-	lxvd2x	%vs8, %r10, %r4
-	lxvd2x	%vs9, %r11, %r4
-	stxvd2x	%vs6, %r6,  %r3
-	stxvd2x	%vs7, %r9,  %r3
-	stxvd2x	%vs8, %r10, %r3
-	stxvd2x	%vs9, %r11, %r3
-
-	addi	%r3, %r3, MEMCPY_ALIGNMENT_BYTES
-	addi	%r4, %r4, MEMCPY_ALIGNMENT_BYTES
-	bdnz	.Lcopy_vsx_loop
-
-	/* Check if there is remaining bytes */
-	cmpd    %r7, 0
-	beq     .Lexit
+#ifdef FN_COPY_LOOP
+FN_COPY_LOOP
 #else
 	/* Setup to copy word with ldu and stdu */
 	ld	%r6, 0(%r4)
@@ -145,7 +116,7 @@ ENTRY(MEMCPY_FUNCTION_NAME)
 	mr	%r3, %r8
 	blr
 
-END(MEMCPY_FUNCTION_NAME)
+END(FN_NAME)
 
 	.section .note.GNU-stack,"",%progbits
 

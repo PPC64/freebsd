@@ -1,13 +1,15 @@
 # $FreeBSD$
 
 MDSRCS+= \
-	bcopy.c \
 	bcopy.S \
 	bcopy_vsx.S \
-	memcpy.c \
+	bcopy_resolver.c \
 	memcpy.S \
 	memcpy_vsx.S \
-	memmove.c \
+	memcpy_resolver.c \
+	memmove.S \
+	memmove_vsx.S \
+	memmove_resolver.c
 	strcpy_arch_2_05.S \
 	strcpy.c \
 	strcpy_resolver.c \

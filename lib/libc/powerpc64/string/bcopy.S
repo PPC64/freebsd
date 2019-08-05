@@ -43,19 +43,15 @@ __FBSDID("$FreeBSD$");
 
 #define BCOPY_BLOCK_COPY_THRESHOLD 512
 
-#ifdef USE_VSX
-#define BCOPY_BUILD_FUNCTION_NAME(name) __ ## name ## _vsx
-#else
-#define BCOPY_BUILD_FUNCTION_NAME(name) __ ## name
-#endif
-
+#ifndef FN_NAME
 #ifdef MEMMOVE
-#define BCOPY_FUNCTION_NAME BCOPY_BUILD_FUNCTION_NAME(memmove)
+#define FN_NAME __memmove
 #else
-#define BCOPY_FUNCTION_NAME BCOPY_BUILD_FUNCTION_NAME(bcopy)
+#define FN_NAME __bcopy
 #endif
 
-ENTRY(BCOPY_FUNCTION_NAME)
+
+ENTRY(FN_NAME)
 	cmpld	%r3, %r4					/* src == dst? if so, nothing to do */
 	beqlr-
 	cmpdi	%r5, 0						/* len == 0? nothing to do : continue */
@@ -200,23 +196,8 @@ ENTRY(BCOPY_FUNCTION_NAME)
 	cmpldi	%r6, 0						/* %r6 == 0? (if so, nothing to copy in phase 2) */
 	beq	.Lphase3
 
-#ifdef USE_VSX
-	mtctr	%r6
-	.align 5
-.Lphase2_vsx_loop:
-	lxvd2x  %vs6, %r7,  %r4
-	lxvd2x  %vs7, %r8,  %r4
-	lxvd2x  %vs8, %r9,  %r4
-	lxvd2x  %vs9, %r10, %r4
-	stxvd2x %vs6, %r7,  %r3
-	stxvd2x %vs7, %r8,  %r3
-	stxvd2x %vs8, %r9,  %r3
-	stxvd2x %vs9, %r10, %r3
-
-	add	%r4, %r4, %r5					/* phase 2 increment */
-	add	%r3, %r3, %r5					/* phase 2 increment */
-
-	bdnz	.Lphase2_vsx_loop
+#ifdef FN_PHASE2
+FN_PHASE2
 #else
 	/* save registers */
 	std	%r14, -56(%r1)
@@ -277,7 +258,7 @@ ENTRY(BCOPY_FUNCTION_NAME)
 	ld	%r9, -24(%r1)					/* pre/post adjustment for single phase 16-byte */
 	b	.Lsingle_phase
 
-END(BCOPY_FUNCTION_NAME)
+END(FN_NAME)
 
 	.section .note.GNU-stack,"",%progbits
 

@@ -37,7 +37,7 @@ __FBSDID("$FreeBSD$");
 	RCSID("$NetBSD: strcpy.S,v 1.0 2018/05/08 13:00:49 lbianc Exp $")
 #endif
 
-ENTRY(strcpy)
+ENTRY(__strcpy_arch_2_05)
 	mr	%r8, %r3
 
 /* 
@@ -139,6 +139,6 @@ ENTRY(strcpy)
 .Lexit:
 	blr
 
-END(strcpy)
+END(__strcpy_arch_2_05)
 
 	.section .note.GNU-stack,"",%progbits

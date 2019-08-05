@@ -43,13 +43,10 @@ __FBSDID("$FreeBSD$");
 
 #define BCOPY_BLOCK_COPY_THRESHOLD 512
 
-#define LXVD2X(xt, ra, rb) .long ((31 << 26) | ((xt & 0x1f) << 21) | ((ra & 0x1f) << 16) | ((rb & 0x1f) << 11) | (844 << 1) | ((xt & 0x20) >> 5))
-#define STXVD2X(xs, ra, rb) .long ((31 << 26) | ((xs & 0x1f) << 21) | ((ra & 0x1f) << 16) | ((rb & 0x1f) << 11) | (972 << 1) | ((xs & 0x20) >> 5))
-
 #ifdef USE_VSX
-#define BCOPY_BUILD_FUNCTION_NAME(name) name ## _vsx
+#define BCOPY_BUILD_FUNCTION_NAME(name) __ ## name ## _vsx
 #else
-#define BCOPY_BUILD_FUNCTION_NAME(name) name ## _plain
+#define BCOPY_BUILD_FUNCTION_NAME(name) __ ## name
 #endif
 
 #ifdef MEMMOVE
@@ -207,14 +204,14 @@ ENTRY(BCOPY_FUNCTION_NAME)
 	mtctr	%r6
 	.align 5
 .Lphase2_vsx_loop:
-	LXVD2X(6, 7, 4)						/* lxvd2x  %vs6, %r7, %r4 */
-	LXVD2X(7, 8, 4)						/* lxvd2x  %vs7, %r8, %r4 */
-	LXVD2X(8, 9, 4)						/* lxvd2x  %vs8, %r9, %r4 */
-	LXVD2X(9, 10, 4)					/* lxvd2x  %vs9, %r10, %r4 */
-	STXVD2X(6, 7, 3)					/* stxvd2x %vs6, %r7, %r3 */
-	STXVD2X(7, 8, 3)					/* stxvd2x %vs7, %r8, %r3 */
-	STXVD2X(8, 9, 3)					/* stxvd2x %vs8, %r9, %r3 */
-	STXVD2X(9, 10, 3)					/* stxvd2x %vs9, %r10, %r3 */
+	lxvd2x  %vs6, %r7,  %r4
+	lxvd2x  %vs7, %r8,  %r4
+	lxvd2x  %vs8, %r9,  %r4
+	lxvd2x  %vs9, %r10, %r4
+	stxvd2x %vs6, %r7,  %r3
+	stxvd2x %vs7, %r8,  %r3
+	stxvd2x %vs8, %r9,  %r3
+	stxvd2x %vs9, %r10, %r3
 
 	add	%r4, %r4, %r5					/* phase 2 increment */
 	add	%r3, %r3, %r5					/* phase 2 increment */

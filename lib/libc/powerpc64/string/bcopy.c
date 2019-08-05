@@ -30,65 +30,36 @@
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
-#include <sys/types.h>
-#include <sys/auxv.h>
 #include <machine/cpu.h>
-#include <machine/atomic.h>
-#include <stdlib.h>
+#include <machine/ifunc.h>
 
 #ifdef MEMCOPY
-extern int bcopy_has_vsx;
-extern void* memcpy_plain(void *dst, const void *src, size_t len);
-extern void* memcpy_vsx(void *dst, const void *src, size_t len);
+#define FN_NAME     memcpy
+#define FN_RET      void *
+#define FN_PARAMS   (void *dst, const void *src, size_t len)
 
-void* memcpy(void *dst, const void *src, size_t len)
 #elif defined(MEMMOVE)
-extern int bcopy_has_vsx;
-extern void* bcopy_plain(void *dst, const void *src, size_t len);
-extern void* bcopy_vsx(void *dst, const void *src, size_t len);
+#define FN_NAME     memmove
+#define FN_RET      void *
+#define FN_PARAMS   (void *dst, const void *src, size_t len)
 
-void* memmove(void *dst, const void *src, size_t len)
 #else
-int bcopy_has_vsx = -1;
-extern void* bcopy_plain(void *dst, const void *src, size_t len);
-extern void* bcopy_vsx(void *dst, const void *src, size_t len);
-
-void bcopy(const void *src, void *dst, size_t len)
+#define FN_NAME     bcopy
+#define FN_RET      void
+#define FN_PARAMS   (const void *src, void *dst, size_t len)
 #endif
+
+#define CAT(a,b)    a##b
+#define CAT3(a,b,c) a##b##c
+
+FN_RET CAT(__, FN_NAME) FN_PARAMS;
+FN_RET CAT3(__, FN_NAME, _vsx) FN_PARAMS;
+
+
+DEFINE_UIFUNC(, FN_RET, FN_NAME, FN_PARAMS)
 {
-	/* XXX: all of this should be replaced with ifunc code once it's available */
-	if (bcopy_has_vsx < 0) {
-		/*
-		 * Initialize bcopy_has_vsx to 0, at least until elf_aux_info() returns.
-		 * Otherwise, if elf_aux_info() calls bcopy/memcpy/memmove, we would enter an infinite loop.
-		 */
-		if (atomic_cmpset_int(&bcopy_has_vsx, -1, 0) != 0) {
-			u_long hwcap;
-
-			if (elf_aux_info(AT_HWCAP, &hwcap, sizeof(hwcap)) == 0 &&
-			    (hwcap & PPC_FEATURE_HAS_VSX) != 0) {
-				atomic_set_int(&bcopy_has_vsx, 1);
-			}
-		}
-	}
-
-	if (bcopy_has_vsx > 0) {
-		/* VSX is supported */
-#if defined(MEMCOPY)
-		return memcpy_vsx(dst, src, len);
-#elif defined(MEMMOVE)
-		return bcopy_vsx(dst, src, len);
-#else
-		bcopy_vsx(dst, src, len);
-#endif
-	} else {
-		/* VSX is not supported */
-#if defined(MEMCOPY)
-		return memcpy_plain(dst, src, len);
-#elif defined(MEMMOVE)
-		return bcopy_plain(dst, src, len);
-#else
-		bcopy_plain(dst, src, len);
-#endif
-	}
+        if (hwcap & PPC_FEATURE_HAS_VSX)
+                return (CAT3(__, FN_NAME, _vsx));
+        else
+                return (CAT(__, FN_NAME));
 }

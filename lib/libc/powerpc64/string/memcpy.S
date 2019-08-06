@@ -30,25 +30,27 @@
 #include <machine/asm.h>
 __FBSDID("$FreeBSD$");
 
-#if 0
-	RCSID("$NetBSD: bcopy.S,v 1.0 2019/03/06 13:37:42 lbianc Exp $")
-#endif
-
 #ifndef FN_NAME
-#define FN_NAME __memcpy
-#define MEMCPY_ALIGNMENT_SIZE_BITS 4
+#define FN_NAME				__memcpy
+WEAK_REFERENCE(__memcpy, memcpy);
+#define BLOCK_BITS			4
 #endif
 
-#define MEMCPY_ALIGNMENT_BYTES (1 << MEMCPY_ALIGNMENT_SIZE_BITS)
-#define MEMCPY_ALIGNMENT_MASK (MEMCPY_ALIGNMENT_BYTES - 1)
+#define BLOCK_BYTES			(1 << BLOCK_BITS)
+#define BLOCK_MASK			(BLOCK_BYTES - 1)
 
-
+/*
+ * r3: dst
+ * r4: src
+ * r5: len
+ */
 ENTRY(FN_NAME)
-	cmpdi	%r5, 0		/* len == 0? nothing to do : continue */
+	cmpdi	%r5, 0			/* len == 0? nothing to do */
 	beqlr-
 
-	mr	%r8, %r3	/* save dst */
+	mr	%r8, %r3		/* save dst */
 
+	/* align src */
 .Lalignment_loop:
 	lbz	%r6, 0(%r4)
 	stb	%r6, 0(%r3)
@@ -57,13 +59,13 @@ ENTRY(FN_NAME)
 	addi	%r5, %r5, -1
 	cmpdi	%r5, 0
 	beq	.Lexit
-	andi.	%r0,%r4,MEMCPY_ALIGNMENT_MASK
+	andi.	%r0, %r4, BLOCK_MASK
 	bne	.Lalignment_loop
 
-	/* Save the remaining of MEMCPY_ALIGNMENT_BYTES */
-	andi.	%r7, %r5, MEMCPY_ALIGNMENT_MASK
+	/* r7 = remaining, non-block, bytes */
+	andi.	%r7, %r5, BLOCK_MASK
 
-	/* Check if there is blocks of MEMCPY_ALIGNMENT_BYTES size to be copied */
+	/* Check if there are blocks of BLOCK_BYTES to be copied */
 	xor.	%r5, %r5, %r7
 	beq	.Lcopy_remaining_fix_index_byte
 
@@ -75,25 +77,25 @@ FN_COPY_LOOP
 	ld	%r9, 8(%r4)
 	std	%r6, 0(%r3)
 	std	%r9, 8(%r3)
-	addi	%r5, %r5, -MEMCPY_ALIGNMENT_BYTES
+	addi	%r5, %r5, -BLOCK_BYTES
 	cmpd	%r5, 0
 	beq	.Lcopy_remaining_fix_index_word
 
-	srdi    %r5, %r5, MEMCPY_ALIGNMENT_SIZE_BITS
+	srdi	%r5, %r5, BLOCK_BITS
 	mtctr	%r5
 .Lcopy_word:
-	ldu	%r6,16(%r4)
-	ld	%r9, 8(%r4)
-	stdu	%r6,16(%r3)
-	std	%r9, 8(%r3)
+	ldu	%r6, 16(%r4)
+	ld	%r9,  8(%r4)
+	stdu	%r6, 16(%r3)
+	std	%r9,  8(%r3)
 	bdnz	.Lcopy_word
 
 .Lcopy_remaining_fix_index_word:
-	/* Check if there is remaining bytes */
+	/* Check if there are remaining bytes */
 	cmpd	%r7, 0
 	beq	.Lexit
-	addi	%r3, %r3, MEMCPY_ALIGNMENT_MASK
-	addi	%r4, %r4, MEMCPY_ALIGNMENT_MASK
+	addi	%r3, %r3, BLOCK_MASK
+	addi	%r4, %r4, BLOCK_MASK
 	b	.Lcopy_remaining
 #endif
 
@@ -101,12 +103,10 @@ FN_COPY_LOOP
 	addi	%r4, %r4, -1
 	addi	%r3, %r3, -1
 
-.Lcopy_remaining:
-	/* Load remaining bytes in CTR */
-	mtctr	%r7
-
-.Lcopy_remaining_loop:
 	/* Copy remaining bytes */
+.Lcopy_remaining:
+	mtctr	%r7
+.Lcopy_remaining_loop:
 	lbzu	%r6, 1(%r4)
 	stbu	%r6, 1(%r3)
 	bdnz	.Lcopy_remaining_loop

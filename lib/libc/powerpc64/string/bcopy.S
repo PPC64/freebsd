@@ -30,64 +30,73 @@
 #include <machine/asm.h>
 __FBSDID("$FreeBSD$");
 
-#if 0
-	RCSID("$NetBSD: bcopy.S,v 1.0 2018/03/22 13:37:42 lffpires Exp $")
-#endif
+#define BLOCK_SIZE_BITS			6
+#define BLOCK_SIZE			(1 << BLOCK_SIZE_BITS)
+#define BLOCK_SIZE_MASK			(BLOCK_SIZE - 1)
 
-#define BCOPY_ALIGNMENT_BYTES 16
-#define BCOPY_ALIGNMENT_MASK (BCOPY_ALIGNMENT_BYTES - 1)
-
-#define BCOPY_BLOCK_SIZE_BITS 6
-#define BCOPY_BLOCK_SIZE (1 << BCOPY_BLOCK_SIZE_BITS)
-#define BCOPY_BLOCK_SIZE_MASK (BCOPY_BLOCK_SIZE - 1)
-
-#define BCOPY_BLOCK_COPY_THRESHOLD 512
+#define MULTI_PHASE_THRESHOLD		512
 
 #ifndef FN_NAME
 #ifdef MEMMOVE
-#define FN_NAME __memmove
+#define FN_NAME				__memmove
+WEAK_REFERENCE(__memmove, memmove);
 #else
-#define FN_NAME __bcopy
+#define FN_NAME				__bcopy
+WEAK_REFERENCE(__bcopy, bcopy);
+#endif
 #endif
 
+/*
+ * r3: dst
+ * r4: src
+ * r5: len
+ */
 
 ENTRY(FN_NAME)
-	cmpld	%r3, %r4					/* src == dst? if so, nothing to do */
+	cmpld	%r3, %r4		/* src == dst? nothing to do */
 	beqlr-
-	cmpdi	%r5, 0						/* len == 0? nothing to do : continue */
+	cmpdi	%r5, 0			/* len == 0? nothing to do */
 	beqlr-
 
-	std	%r3, -8(%r1)					/* save dst */
-	cmpldi	%r5, BCOPY_BLOCK_COPY_THRESHOLD			/* len >= BCOPY_BLOCK_COPY_THRESHOLD? */
-	bge	.Lmulti_phase					/* if so, go to multi-phase */
+#ifdef MEMMOVE
+	std	%r3, -8(%r1)		/* save dst */
+#else	/* bcopy: swap src/dst */
+	mr	%r0, %r3
+	mr	%r3, %r4
+	mr	%r4, %r0
+#endif
+
+	cmpldi	%r5, MULTI_PHASE_THRESHOLD
+	bge	.Lmulti_phase
 
 	/* set up single-phase copy parameters */
 .Lsingle_phase_setup:
-	cmpd	%r4, %r3					/* forward or backward copy? */
+	cmpd	%r4, %r3		/* forward or backward copy? */
 	blt	.Lbackward_single_copy
 
 	/* forward copy */
-	li	%r0, 1						/* increment for single phase 1-byte */
-	li	%r8, 16						/* increment for single phase 16-byte */
-	li	%r9, 0						/* pre-adjustment for single phase 16-byte */
-
+	li	%r0, 1
+	li	%r8, 16
+	li	%r9, 0
 	b	.Lsingle_phase
 
 .Lbackward_single_copy:
 	/* backward copy */
-	li	%r0, -1						/* increment for single phase 1-byte */
-	li	%r8, -16					/* increment for single phase 16-byte */
-	li	%r9, -15					/* pre/post adjustment for single phase 16-byte */
-	add	%r6, %r5, %r0					/* %r6 = len - 1 */
-	add	%r3, %r3, %r6					/* advance to the last position in dst */
-	add	%r4, %r4, %r6					/* advance to the last position in src */
+	li	%r0, -1
+	li	%r8, -16
+	li	%r9, -15
+	/* advance src and dst to last position */
+	add	%r6, %r5, %r0		/* r6 = len - 1 */
+	add	%r3, %r3, %r6
+	add	%r4, %r4, %r6
 
 .Lsingle_phase:
-	srdi.	%r6, %r5, 4					/* number of 16-bytes */
+	srdi.	%r6, %r5, 4		/* number of 16-bytes */
 	beq	.Lsingle_1
 
-	add	%r3, %r3, %r9					/* pre-adjustment */
-	add	%r4, %r4, %r9					/* pre-adjustment */
+	/* pre-adjustment */
+	add	%r3, %r3, %r9
+	add	%r4, %r4, %r9
 
 	mtctr	%r6
 	.align 5
@@ -100,100 +109,106 @@ ENTRY(FN_NAME)
 	add	%r3, %r3, %r8
 	bdnz	.Lsingle_16_loop
 
-	sub	%r3, %r3, %r9					/* post-adjustment */
-	sub	%r4, %r4, %r9					/* post-adjustment */
+	/* post-adjustment */
+	sub	%r3, %r3, %r9
+	sub	%r4, %r4, %r9
 
 .Lsingle_1:
-	andi.	%r6, %r5, 0x0f					/* number of 1-bytes */
-	beq	.Ldone						/* 1-bytes == 0? if so, nothing to do */
+	andi.	%r6, %r5, 0x0f		/* number of 1-bytes */
+	beq	.Ldone			/* 1-bytes == 0? done */
 
 	mtctr	%r6
 	.align 5
 .Lsingle_1_loop:
 	lbz	%r6, 0(%r4)
-	add	%r4, %r4, %r0					/* increment */
+	add	%r4, %r4, %r0		/* increment */
 	stb	%r6, 0(%r3)
-	add	%r3, %r3, %r0					/* increment */
-
+	add	%r3, %r3, %r0		/* increment */
 	bdnz	.Lsingle_1_loop
 
 .Ldone:
-	/* done copying */
-
-	ld	%r3, -8(%r1)					/* restore dst */
+#ifdef MEMMOVE
+	ld	%r3, -8(%r1)		/* restore dst */
+#endif
 	blr
 
 
 .Lmulti_phase:
 	/* set up multi-phase copy parameters */
-	andi.	%r6, %r4, BCOPY_ALIGNMENT_MASK
 
-	subfic	%r7, %r6, BCOPY_ALIGNMENT_BYTES
-	andi.	%r7, %r7, BCOPY_ALIGNMENT_MASK			/* %r7 = bytes before the aligned section of the buffer */
-	sub	%r8, %r5, %r7					/* %r8 = number of bytes in and after the aligned section of the buffer */
-	andi.	%r9, %r8, BCOPY_BLOCK_SIZE_MASK			/* %r9 = number of bytes after the aligned section of the buffer */
-	srdi	%r10, %r8, BCOPY_BLOCK_SIZE_BITS		/* %r10 = number of BLOCKS in the aligned section of the buffer */
+	/* r7 = bytes before the aligned section of the buffer */
+	andi.	%r6, %r4, 15
+	subfic	%r7, %r6, 16
+	/* r8 = bytes in and after the aligned section of the buffer */
+	sub	%r8, %r5, %r7
+	/* r9 = bytes after the aligned section of the buffer */
+	andi.	%r9, %r8, BLOCK_SIZE_MASK
+	/* r10 = BLOCKS in the aligned section of the buffer */
+	srdi	%r10, %r8, BLOCK_SIZE_BITS
 
-	cmpd	%r4, %r3					/* forward or backward copy? */
+	/* forward or backward copy? */
+	cmpd	%r4, %r3
 	blt	.Lbackward_multi_copy
 
 	/* set up forward copy parameters */
-	std	%r7, -32(%r1)					/* number of bytes to copy in phase 1 */
-	std	%r9, -48(%r1)					/* number of bytes to copy in phase 3 */
-	std	%r10, -40(%r1)					/* number of BLOCKS to copy in phase 2 */
+	std	%r7,  -32(%r1)		/* bytes to copy in phase 1 */
+	std	%r10, -40(%r1)		/* BLOCKS to copy in phase 2 */
+	std	%r9,  -48(%r1)		/* bytes to copy in phase 3 */
 
-	li	%r0, 1						/* increment for phases 1 and 3 */
-	li	%r5, BCOPY_BLOCK_SIZE				/* increment for phase 2 */
+	li	%r0, 1			/* increment for phases 1 and 3 */
+	li	%r5, BLOCK_SIZE		/* increment for phase 2 */
 
-	li	%r7, 0						/* offset for op 1 of phase 2 */
-	li	%r8, 16						/* offset for op 2 of phase 2 */
-	li	%r9, 32						/* offset for op 3 of phase 2 */
-	li	%r10, 48					/* offset for op 4 of phase 2 */
+	/* op offsets for phase 2 */
+	li	%r7,  0
+	li	%r8,  16
+	li	%r9,  32
+	li	%r10, 48
 
-	std	%r8, -16(%r1)					/* increment for single phase 16-byte (16) */
-	std	%r7, -24(%r1)					/* pre/post adjustment for single phase 16-byte (0) */
+	std	%r8, -16(%r1)		/* 16-byte increment (16) */
+	std	%r7, -24(%r1)		/* 16-byte pre/post adjustment (0) */
 
 	b	.Lphase1
 
 .Lbackward_multi_copy:
 	/* set up backward copy parameters */
-	std	%r7, -48(%r1)					/* number of bytes to copy in phase 3 */
-	std	%r9, -32(%r1)					/* number of bytes to copy in phase 1 */
-	std	%r10, -40(%r1)					/* number of BLOCKS to copy in phase 2 */
+	std	%r9,  -32(%r1)		/* bytes to copy in phase 1 */
+	std	%r10, -40(%r1)		/* BLOCKS to copy in phase 2 */
+	std	%r7,  -48(%r1)		/* bytes to copy in phase 3 */
 
-	li	%r0, -1						/* increment for phases 1 and 3 */
-	add	%r6, %r5, %r0					/* %r6 = len - 1 */
-	add	%r3, %r3, %r6					/* advance to the last position in dst */
-	add	%r4, %r4, %r6					/* advance to the last position in src */
-	li	%r5, -BCOPY_BLOCK_SIZE				/* increment for phase 2 */
+	li	%r0, -1			/* increment for phases 1 and 3 */
+	add	%r6, %r5, %r0		/* r6 = len - 1 */
+	li	%r5, -BLOCK_SIZE	/* increment for phase 2 */
+	/* advance src and dst to the last position */
+	add	%r3, %r3, %r6
+	add	%r4, %r4, %r6
 
-	li	%r7, -15					/* offset for op 1 of phase 2 */
-	li	%r8, -31					/* offset for op 2 of phase 2 */
-	li	%r9, -47					/* offset for op 3 of phase 2 */
-	li	%r10, -63					/* offset for op 4 of phase 2 */
+	/* op offsets for phase 2 */
+	li	%r7,  -15
+	li	%r8,  -31
+	li	%r9,  -47
+	li	%r10, -63
 
-	add	%r6, %r7, %r0					/* %r6 = -16 */
-	std	%r6, -16(%r1)					/* increment for single phase 16-byte (-16) */
-	std	%r7, -24(%r1)					/* pre/post adjustment for single phase 16-byte (-15) */
+	add	%r6, %r7, %r0		/* r6 = -16 */
+	std	%r6, -16(%r1)		/* 16-byte increment (-16) */
+	std	%r7, -24(%r1)		/* 16-byte pre/post adjustment (-15) */
 
 .Lphase1:
-	ld	%r6, -32(%r1)					/* number of bytes to copy in phase 1 */
-	cmpldi	%r6, 0						/* %r6 == 0? (if so, nothing to copy in phase 1) */
+	ld	%r6, -32(%r1)		/* bytes to copy in phase 1 */
+	cmpldi	%r6, 0			/* r6 == 0? skip phase 1 */
 	beq+	.Lphase2
 
 	mtctr	%r6
 	.align 5
 .Lphase1_loop:
 	lbz	%r6, 0(%r4)
-	add	%r4, %r4, %r0					/* phase 1 increment */
+	add	%r4, %r4, %r0		/* phase 1 increment */
 	stb	%r6, 0(%r3)
-	add	%r3, %r3, %r0					/* phase 1 increment */
-
+	add	%r3, %r3, %r0		/* phase 1 increment */
 	bdnz	.Lphase1_loop
 
 .Lphase2:
-	ld	%r6, -40(%r1)					/* number of BLOCKS to copy in phase 2 */
-	cmpldi	%r6, 0						/* %r6 == 0? (if so, nothing to copy in phase 2) */
+	ld	%r6, -40(%r1)		/* BLOCKS to copy in phase 2 */
+	cmpldi	%r6, 0			/* %r6 == 0? skip phase 2 */
 	beq	.Lphase3
 
 #ifdef FN_PHASE2
@@ -216,29 +231,29 @@ FN_PHASE2
 
 	mtctr	%r6
 	.align 5
-.Lphase2_no_vsx_loop:
-	ldx	%r14, %r7, %r4
+.Lphase2_loop:
+	ldx	%r14, %r7,  %r4
 	ldx	%r15, %r18, %r4
-	ldx	%r16, %r8, %r4
+	ldx	%r16, %r8,  %r4
 	ldx	%r17, %r19, %r4
-	stdx	%r14, %r7, %r3
+	stdx	%r14, %r7,  %r3
 	stdx	%r15, %r18, %r3
-	stdx	%r16, %r8, %r3
+	stdx	%r16, %r8,  %r3
 	stdx	%r17, %r19, %r3
 
-	ldx	%r14, %r9, %r4
+	ldx	%r14, %r9,  %r4
 	ldx	%r15, %r20, %r4
 	ldx	%r16, %r10, %r4
 	ldx	%r17, %r21, %r4
-	stdx	%r14, %r9, %r3
+	stdx	%r14, %r9,  %r3
 	stdx	%r15, %r20, %r3
 	stdx	%r16, %r10, %r3
 	stdx	%r17, %r21, %r3
 
-	add	%r4, %r4, %r5					/* phase 2 increment */
-	add	%r3, %r3, %r5					/* phase 2 increment */
+	add	%r4, %r4, %r5		/* phase 2 increment */
+	add	%r3, %r3, %r5		/* phase 2 increment */
 
-	bdnz	.Lphase2_no_vsx_loop
+	bdnz	.Lphase2_loop
 
 	/* restore registers */
 	ld	%r14, -56(%r1)
@@ -253,9 +268,9 @@ FN_PHASE2
 
 .Lphase3:
 	/* load registers for transitioning into the single-phase logic */
-	ld	%r5, -48(%r1)					/* number of bytes to copy in phase 3 */
-	ld	%r8, -16(%r1)					/* increment for single phase 16-byte */
-	ld	%r9, -24(%r1)					/* pre/post adjustment for single phase 16-byte */
+	ld	%r5, -48(%r1)		/* bytes to copy in phase 3 */
+	ld	%r8, -16(%r1)		/* 16-byte increment */
+	ld	%r9, -24(%r1)		/* 16-byte pre/post adjustment */
 	b	.Lsingle_phase
 
 END(FN_NAME)

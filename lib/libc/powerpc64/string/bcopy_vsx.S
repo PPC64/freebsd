@@ -28,13 +28,21 @@
  */
 
 #ifndef FN_NAME
-#define FN_NAME __bcopy_vsx
+#define FN_NAME		__bcopy_vsx
 #endif
+
+/*
+ * r3: dst
+ * r4: src
+ * r5: block increment
+ * r6: blocks to copy
+ * r7/r8/r9/r10: 16-byte offsets to copy
+ */
 
 #define FN_PHASE2 \
 	mtctr	%r6			;\
 	.align 5			;\
-.Lphase2_vsx_loop:			;\
+.Lphase2_loop:				;\
 	lxvd2x  %vs6, %r7,  %r4		;\
 	lxvd2x  %vs7, %r8,  %r4		;\
 	lxvd2x  %vs8, %r9,  %r4		;\
@@ -47,6 +55,6 @@
 	add	%r4, %r4, %r5		;\
 	add	%r3, %r3, %r5		;\
 					 \
-	bdnz	.Lphase2_vsx_loop	;\
+	bdnz	.Lphase2_loop		;\
 
 #include "bcopy.S"

@@ -27,13 +27,16 @@
  *
  */
 
-#define MEMCOPY
-#define FN_NAME __memcpy_vsx
-#define MEMCPY_ALIGNMENT_SIZE_BITS 6
+#define FN_NAME			__memcpy_vsx
+#define BLOCK_BITS		6
 
+/*
+ * r5: bytes to copy (multiple of BLOCK_BYTES)
+ *
+ */
 #define FN_COPY_LOOP \
-	/* Load CTR with quantity of blocks */		 \
-	srdi	%r5, %r5, MEMCPY_ALIGNMENT_SIZE_BITS	;\
+	/* Load CTR with number of blocks */		 \
+	srdi	%r5, %r5, BLOCK_BITS			;\
 	mtctr	%r5					;\
 	/* Prepare indexes to load and store data */	 \
 	xor	%r6, %r6, %r6				;\
@@ -50,8 +53,8 @@
 	stxvd2x	%vs8, %r10, %r3				;\
 	stxvd2x	%vs9, %r11, %r3				;\
 							 \
-	addi	%r3, %r3, MEMCPY_ALIGNMENT_BYTES	;\
-	addi	%r4, %r4, MEMCPY_ALIGNMENT_BYTES	;\
+	addi	%r3, %r3, BLOCK_BYTES			;\
+	addi	%r4, %r4, BLOCK_BYTES			;\
 	bdnz	.Lcopy_vsx_loop				;\
 							 \
 	/* Check if there is remaining bytes */		 \

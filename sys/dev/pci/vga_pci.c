@@ -2,7 +2,6 @@
  * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
  *
  * Copyright (c) 2005 John Baldwin <jhb@FreeBSD.org>
- * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -228,14 +227,14 @@ vga_pci_map_bios(device_t dev, size_t *size)
 	for (found = i = 0; i < hz; i++) {
 		found = (atomic_load_acq_char(&bios[0]) == 0x55 &&
 				 atomic_load_acq_char(&bios[1]) == 0xaa);
-		if (found)
-			break;
-		pause("vgabios", 1);
-	}
-	if (found)
 		return (bios);
 	if (bootverbose)
 		device_printf(dev, "initial rom mapping failed -- resetting\n");
+=======
+		return (__DEVOLATILE(void *, bios));
+	if (bootverbose)
+		device_printf(dev, "initial ROM mapping failed -- resetting\n");
+>>>>>>> master
 
 	/*
 	 * Enable ROM decode

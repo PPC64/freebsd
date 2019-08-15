@@ -864,5 +864,50 @@ METHOD int get_cpus {
 	device_t	_child;
 	enum cpu_sets	_op;
 	size_t		_setsize;
-	cpuset_t	*_cpuset;
+	struct _cpuset	*_cpuset;
 } DEFAULT bus_generic_get_cpus;
+
+/**
+ * @brief Prepares the given child of the bus for reset
+ *
+ * Typically bus detaches or suspends children' drivers, and then
+ * calls this method to save bus-specific information, for instance,
+ * PCI config space, which is damaged by reset.
+ *
+ * The bus_helper_reset_prepare() helper is provided to ease
+ * implementing bus reset methods.
+ *
+ * @param _dev		the bus device
+ * @param _child	the child device
+ */
+METHOD int reset_prepare {
+	device_t _dev;
+	device_t _child;
+} DEFAULT null_reset_prepare;
+
+/**
+ * @brief Restores the child operations after the reset
+ *
+ * The bus_helper_reset_post() helper is provided to ease
+ * implementing bus reset methods.
+ *
+ * @param _dev		the bus device
+ * @param _child	the child device
+ */
+METHOD int reset_post {
+	device_t _dev;
+	device_t _child;
+} DEFAULT null_reset_post;
+
+/**
+ * @brief Performs reset of the child
+ *
+ * @param _dev		the bus device
+ * @param _child	the child device
+ * @param _flags	DEVF_RESET_ flags
+ */
+METHOD int reset_child {
+	device_t _dev;
+	device_t _child;
+	int _flags;
+};

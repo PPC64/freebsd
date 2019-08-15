@@ -36,8 +36,10 @@ __FBSDID("$FreeBSD$");
 #include <sys/kernel.h>
 #include <sys/systm.h>
 #include <sys/bus.h>
+#include <sys/boot.h>
 #include <sys/cons.h>
 #include <sys/kdb.h>
+#include <sys/mutex.h>
 #include <sys/reboot.h>
 
 #ifdef FDT
@@ -173,20 +175,6 @@ mips_init(void)
 #endif
 }
 
-#ifdef FDT
-static void
-_parse_bootargs(char *cmdline)
-{
-	char *v;
-
-	while ((v = strsep(&cmdline, " \n")) != NULL) {
-		if (*v == '\0')
-			continue;
-		boothowto |= boot_parse_arg(v);
-	}
-}
-#endif
-
 void
 platform_start(__register_t a0,  __register_t a1,
     __register_t a2 __unused, __register_t a3 __unused)
@@ -247,7 +235,7 @@ platform_start(__register_t a0,  __register_t a1,
 	/* Parse cmdline from U-Boot */
 	argc = a0;
 	argv = (char **)a1;
-	boothowto |= boot_parse_cmdline(argc, argv);
+	boothowto |= boot_parse_args(argc, argv);
 
 	mips_init();
 }

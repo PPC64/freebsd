@@ -513,7 +513,7 @@ ofw_pci_translate_resource(device_t bus, int type, rman_res_t start,
 			break;
 		default:
 			space = -1;
-			}
+		}
 
 		if (type == space) {
 			start += (rp->host - rp->pci);

@@ -66,6 +66,7 @@
 #define R92C_HSIMR			0x058
 #define R92C_HSISR			0x05c
 #define R92C_MULTI_FUNC_CTRL		0x068
+#define R92C_AFE_XTAL_CTRL_EXT	0x078
 #define R92C_LDO_SWR_CTRL		0x07c
 #define R92C_MCUFWDL			0x080
 #define R92C_HMEBOX_EXT(idx)		(0x088 + (idx) * 2)
@@ -147,6 +148,7 @@
 #define R92C_RD_RESP_PKT_TH		0x463
 #define R92C_INIRTS_RATE_SEL		0x480
 #define R92C_INIDATA_RATE_SEL(macid)	(0x484 + (macid))
+#define R92C_POWER_STATUS		0x4a4
 #define R92C_QUEUE_CTRL			0x4c6
 #define R92C_MAX_AGGR_NUM		0x4ca
 #define R92C_BAR_MODE_CTRL		0x4cc
@@ -347,6 +349,7 @@
 
 /* Bits for R92C_GPIO_MUXCFG. */
 #define R92C_GPIO_MUXCFG_ENBT	0x0020
+#define R92C_GPIO_MUXCFG_ENSIC	0x1000
 
 /* Bits for R92C_LEDCFG0. */
 #define R92C_LEDCFG0_DIS	0x08

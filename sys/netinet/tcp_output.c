@@ -656,7 +656,8 @@ after_sack_rexmit:
 		if (adv >= (int32_t)(2 * tp->t_maxseg) &&
 		    (adv >= (int32_t)(so->so_rcv.sb_hiwat / 4) ||
 		     recwin <= (so->so_rcv.sb_hiwat / 8) ||
-		     so->so_rcv.sb_hiwat <= 8 * tp->t_maxseg))
+		     so->so_rcv.sb_hiwat <= 8 * tp->t_maxseg ||
+		     adv >= TCP_MAXWIN << tp->rcv_scale))
 			goto send;
 		if (2 * adv >= (int32_t)so->so_rcv.sb_hiwat)
 			goto send;
@@ -1283,15 +1284,9 @@ send:
 		m->m_pkthdr.tso_segsz = tp->t_maxseg - optlen;
 	}
 
-#if defined(IPSEC) || defined(IPSEC_SUPPORT)
-	KASSERT(len + hdrlen + ipoptlen - ipsec_optlen == m_length(m, NULL),
-	    ("%s: mbuf chain shorter than expected: %d + %u + %u - %u != %u",
-	    __func__, len, hdrlen, ipoptlen, ipsec_optlen, m_length(m, NULL)));
-#else
-	KASSERT(len + hdrlen + ipoptlen == m_length(m, NULL),
-	    ("%s: mbuf chain shorter than expected: %d + %u + %u != %u",
-	    __func__, len, hdrlen, ipoptlen, m_length(m, NULL)));
-#endif
+	KASSERT(len + hdrlen == m_length(m, NULL),
+	    ("%s: mbuf chain shorter than expected: %d + %u != %u",
+	    __func__, len, hdrlen, m_length(m, NULL)));
 
 #ifdef TCP_HHOOK
 	/* Run HHOOK_TCP_ESTABLISHED_OUT helper hooks. */
@@ -1513,7 +1508,13 @@ timer:
 		if (SEQ_GT(tp->snd_nxt + xlen, tp->snd_max))
 			tp->snd_max = tp->snd_nxt + xlen;
 	}
-
+	if ((error == 0) &&
+	    (TCPS_HAVEESTABLISHED(tp->t_state) &&
+	     (tp->t_flags & TF_SACK_PERMIT) &&
+	     tp->rcv_numsacks > 0)) {
+		    /* Clean up any DSACK's sent */
+		    tcp_clean_dsack_blocks(tp);
+	}
 	if (error) {
 		/* Record the error. */
 		TCP_LOG_EVENT(tp, NULL, &so->so_rcv, &so->so_snd, TCP_LOG_OUT,

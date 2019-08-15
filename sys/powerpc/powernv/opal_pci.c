@@ -93,8 +93,8 @@ static int opalpci_route_interrupt(device_t bus, device_t dev, int pin);
 /*
  * MSI PIC interface.
  */
-static void opalpic_pic_enable(device_t dev, u_int irq, u_int vector);
-static void opalpic_pic_eoi(device_t dev, u_int irq);
+static void opalpic_pic_enable(device_t dev, u_int irq, u_int vector, void **);
+static void opalpic_pic_eoi(device_t dev, u_int irq, void *);
 
 /* Bus interface */
 static bus_dma_tag_t opalpci_get_dma_tag(device_t dev, device_t child);
@@ -116,6 +116,8 @@ static bus_dma_tag_t opalpci_get_dma_tag(device_t dev, device_t child);
 #define	OPAL_EEH_ACTION_CLEAR_FREEZE_MMIO	1
 #define	OPAL_EEH_ACTION_CLEAR_FREEZE_DMA	2
 #define	OPAL_EEH_ACTION_CLEAR_FREEZE_ALL	3
+
+#define	OPAL_EEH_STOPPED_NOT_FROZEN		0
 
 /*
  * Constants
@@ -505,10 +507,11 @@ opalpci_read_config(device_t dev, u_int bus, u_int slot, u_int func, u_int reg,
 {
 	struct opalpci_softc *sc;
 	uint64_t config_addr;
-	uint8_t byte;
+	uint8_t byte, eeh_state;
 	uint16_t half;
 	uint32_t word;
 	int error;
+	uint16_t err_type;
 
 	sc = device_get_softc(dev);
 
@@ -532,19 +535,28 @@ opalpci_read_config(device_t dev, u_int bus, u_int slot, u_int func, u_int reg,
 	default:
 		error = OPAL_SUCCESS;
 		word = 0xffffffff;
+		width = 4;
 	}
 
 	/*
 	 * Poking config state for non-existant devices can make
 	 * the host bridge hang up. Clear any errors.
-	 *
-	 * XXX: Make this conditional on the existence of a freeze
 	 */
-	opal_call(OPAL_PCI_EEH_FREEZE_CLEAR, sc->phb_id, OPAL_PCI_DEFAULT_PE,
-	    OPAL_EEH_ACTION_CLEAR_FREEZE_ALL);
 	
-	if (error != OPAL_SUCCESS)
-		word = 0xffffffff;
+	if (error != OPAL_SUCCESS ||
+	    (word == ((1UL << (8 * width)) - 1))) {
+		if (error != OPAL_HARDWARE) {
+			opal_call(OPAL_PCI_EEH_FREEZE_STATUS, sc->phb_id,
+			    OPAL_PCI_DEFAULT_PE, vtophys(&eeh_state),
+			    vtophys(&err_type), NULL);
+			if (eeh_state != OPAL_EEH_STOPPED_NOT_FROZEN)
+				opal_call(OPAL_PCI_EEH_FREEZE_CLEAR,
+				    sc->phb_id, OPAL_PCI_DEFAULT_PE,
+				    OPAL_EEH_ACTION_CLEAR_FREEZE_ALL);
+		}
+		if (error != OPAL_SUCCESS)
+			word = 0xffffffff;
+	}
 
 	return (word);
 }
@@ -581,8 +593,11 @@ opalpci_write_config(device_t dev, u_int bus, u_int slot, u_int func,
 		 * Poking config state for non-existant devices can make
 		 * the host bridge hang up. Clear any errors.
 		 */
-		opal_call(OPAL_PCI_EEH_FREEZE_CLEAR, sc->phb_id,
-		    OPAL_PCI_DEFAULT_PE, OPAL_EEH_ACTION_CLEAR_FREEZE_ALL);
+		if (error != OPAL_HARDWARE) {
+			opal_call(OPAL_PCI_EEH_FREEZE_CLEAR,
+			    sc->phb_id, OPAL_PCI_DEFAULT_PE,
+			    OPAL_EEH_ACTION_CLEAR_FREEZE_ALL);
+		}
 	}
 }
 
@@ -681,22 +696,22 @@ opalpci_map_msi(device_t dev, device_t child, int irq, uint64_t *addr,
 }
 
 static void
-opalpic_pic_enable(device_t dev, u_int irq, u_int vector)
+opalpic_pic_enable(device_t dev, u_int irq, u_int vector, void **priv)
 {
 	struct opalpci_softc *sc = device_get_softc(dev);
 
-	PIC_ENABLE(root_pic, irq, vector);
-	opal_call(OPAL_PCI_MSI_EOI, sc->phb_id, irq);
+	PIC_ENABLE(root_pic, irq, vector, priv);
+	opal_call(OPAL_PCI_MSI_EOI, sc->phb_id, irq, priv);
 }
 
-static void opalpic_pic_eoi(device_t dev, u_int irq)
+static void opalpic_pic_eoi(device_t dev, u_int irq, void *priv)
 {
 	struct opalpci_softc *sc;
 
 	sc = device_get_softc(dev);
 	opal_call(OPAL_PCI_MSI_EOI, sc->phb_id, irq);
 
-	PIC_EOI(root_pic, irq);
+	PIC_EOI(root_pic, irq, priv);
 }
 
 static bus_dma_tag_t

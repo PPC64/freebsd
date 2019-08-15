@@ -31,13 +31,12 @@ opt_scsi.h:
 	echo "#define SCSI_DELAY 15000" > ${.TARGET}
 opt_wlan.h:
 	echo "#define IEEE80211_DEBUG 1" > ${.TARGET}
-	echo "#define IEEE80211_AMPDU_AGE 1" >> ${.TARGET}
 	echo "#define IEEE80211_SUPPORT_MESH 1" >> ${.TARGET}
 KERN_OPTS.i386=NEW_PCIB DEV_PCI
 KERN_OPTS.amd64=NEW_PCIB DEV_PCI
 KERN_OPTS.powerpc=NEW_PCIB DEV_PCI
 KERN_OPTS=MROUTING IEEE80211_DEBUG \
-	IEEE80211_AMPDU_AGE IEEE80211_SUPPORT_MESH DEV_BPF \
+	IEEE80211_SUPPORT_MESH DEV_BPF \
 	${KERN_OPTS.${MACHINE}} ${KERN_OPTS_EXTRA}
 .if ${MK_INET_SUPPORT} != "no"
 KERN_OPTS+= INET TCP_OFFLOAD
@@ -46,6 +45,8 @@ KERN_OPTS+= INET TCP_OFFLOAD
 KERN_OPTS+= INET6
 .endif
 .elif !defined(KERN_OPTS)
+# Add all the options that are mentioned in any opt_*.h file when we
+# have a kernel build directory to pull them from.
 KERN_OPTS!=cat ${KERNBUILDDIR}/opt*.h | awk '{print $$2;}' | sort -u
 .export KERN_OPTS
 .endif

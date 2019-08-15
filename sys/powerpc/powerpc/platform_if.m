@@ -84,6 +84,10 @@ CODE {
 	{
 		return;
 	}
+	static void platform_null_smp_probe_threads(void)
+	{
+		return;
+	}
 };
 
 /**
@@ -129,7 +133,7 @@ METHOD void mem_regions {
 
 /**
  * @brief Return the system's physical memory map.
- * 
+ *
  * It shall provide the total RAM with the corresponding domains.
  *
  * @param _memp		Array of physical memory chunks
@@ -211,6 +215,13 @@ METHOD int smp_start_cpu {
 METHOD void smp_ap_init {
 	platform_t	_plat;
 } DEFAULT platform_null_smp_ap_init;
+
+/**
+ * @brief Probe mp_ncores and smp_threads_per_core for early MI code
+ */
+METHOD void smp_probe_threads {
+	platform_t	_plat;
+} DEFAULT platform_null_smp_probe_threads;
 
 /**
  * @brief Return SMP topology

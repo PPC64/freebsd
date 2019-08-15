@@ -186,6 +186,7 @@ ahci_attach(device_t dev)
 	ctlr->ccc = 0;
 	resource_int_value(device_get_name(dev),
 	    device_get_unit(dev), "ccc", &ctlr->ccc);
+	mtx_init(&ctlr->ch_mtx, "AHCI channels lock", NULL, MTX_DEF);
 
 	/* Setup our own memory management for channels. */
 	ctlr->sc_iomem.rm_start = rman_get_start(ctlr->r_mem);
@@ -379,6 +380,7 @@ ahci_detach(device_t dev)
 	/* Free memory. */
 	rman_fini(&ctlr->sc_iomem);
 	ahci_free_mem(dev);
+	mtx_destroy(&ctlr->ch_mtx);
 	return (0);
 }
 
@@ -666,6 +668,50 @@ ahci_get_dma_tag(device_t dev, device_t child)
 	return (ctlr->dma_tag);
 }
 
+void
+ahci_attached(device_t dev, struct ahci_channel *ch)
+{
+	struct ahci_controller *ctlr = device_get_softc(dev);
+
+	mtx_lock(&ctlr->ch_mtx);
+	ctlr->ch[ch->unit] = ch;
+	mtx_unlock(&ctlr->ch_mtx);
+}
+
+void
+ahci_detached(device_t dev, struct ahci_channel *ch)
+{
+	struct ahci_controller *ctlr = device_get_softc(dev);
+
+	mtx_lock(&ctlr->ch_mtx);
+	mtx_lock(&ch->mtx);
+	ctlr->ch[ch->unit] = NULL;
+	mtx_unlock(&ch->mtx);
+	mtx_unlock(&ctlr->ch_mtx);
+}
+
+struct ahci_channel *
+ahci_getch(device_t dev, int n)
+{
+	struct ahci_controller *ctlr = device_get_softc(dev);
+	struct ahci_channel *ch;
+
+	KASSERT(n >= 0 && n < AHCI_MAX_PORTS, ("Bad channel number %d", n));
+	mtx_lock(&ctlr->ch_mtx);
+	ch = ctlr->ch[n];
+	if (ch != NULL)
+		mtx_lock(&ch->mtx);
+	mtx_unlock(&ctlr->ch_mtx);
+	return (ch);
+}
+
+void
+ahci_putch(struct ahci_channel *ch)
+{
+
+	mtx_unlock(&ch->mtx);
+}
+
 static int
 ahci_ch_probe(device_t dev)
 {
@@ -824,6 +870,7 @@ ahci_ch_attach(device_t dev)
 		    ahci_ch_pm, ch);
 	}
 	mtx_unlock(&ch->mtx);
+	ahci_attached(device_get_parent(dev), ch);
 	ctx = device_get_sysctl_ctx(dev);
 	tree = device_get_sysctl_tree(dev);
 	SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO, "disable_phy",
@@ -849,6 +896,7 @@ ahci_ch_detach(device_t dev)
 {
 	struct ahci_channel *ch = device_get_softc(dev);
 
+	ahci_detached(device_get_parent(dev), ch);
 	mtx_lock(&ch->mtx);
 	xpt_async(AC_LOST_DEVICE, ch->path, NULL);
 	/* Forget about reset. */
@@ -982,18 +1030,22 @@ ahci_dmainit(device_t dev)
 	struct ahci_channel *ch = device_get_softc(dev);
 	struct ahci_dc_cb_args dcba;
 	size_t rfsize;
+	int error;
 
 	/* Command area. */
-	if (bus_dma_tag_create(bus_get_dma_tag(dev), 1024, 0,
+	error = bus_dma_tag_create(bus_get_dma_tag(dev), 1024, 0,
 	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR,
 	    NULL, NULL, AHCI_WORK_SIZE, 1, AHCI_WORK_SIZE,
-	    0, NULL, NULL, &ch->dma.work_tag))
+	    0, NULL, NULL, &ch->dma.work_tag);
+	if (error != 0)
 		goto error;
-	if (bus_dmamem_alloc(ch->dma.work_tag, (void **)&ch->dma.work,
-	    BUS_DMA_ZERO, &ch->dma.work_map))
+	error = bus_dmamem_alloc(ch->dma.work_tag, (void **)&ch->dma.work,
+	    BUS_DMA_ZERO, &ch->dma.work_map);
+	if (error != 0)
 		goto error;
-	if (bus_dmamap_load(ch->dma.work_tag, ch->dma.work_map, ch->dma.work,
-	    AHCI_WORK_SIZE, ahci_dmasetupc_cb, &dcba, 0) || dcba.error) {
+	error = bus_dmamap_load(ch->dma.work_tag, ch->dma.work_map, ch->dma.work,
+	    AHCI_WORK_SIZE, ahci_dmasetupc_cb, &dcba, BUS_DMA_NOWAIT);
+	if (error != 0 || (error = dcba.error) != 0) {
 		bus_dmamem_free(ch->dma.work_tag, ch->dma.work, ch->dma.work_map);
 		goto error;
 	}
@@ -1003,33 +1055,37 @@ ahci_dmainit(device_t dev)
 	    rfsize = 4096;
 	else
 	    rfsize = 256;
-	if (bus_dma_tag_create(bus_get_dma_tag(dev), rfsize, 0,
+	error = bus_dma_tag_create(bus_get_dma_tag(dev), rfsize, 0,
 	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR,
 	    NULL, NULL, rfsize, 1, rfsize,
-	    0, NULL, NULL, &ch->dma.rfis_tag))
+	    0, NULL, NULL, &ch->dma.rfis_tag);
+	if (error != 0)
 		goto error;
-	if (bus_dmamem_alloc(ch->dma.rfis_tag, (void **)&ch->dma.rfis, 0,
-	    &ch->dma.rfis_map))
+	error = bus_dmamem_alloc(ch->dma.rfis_tag, (void **)&ch->dma.rfis, 0,
+	    &ch->dma.rfis_map);
+	if (error != 0)
 		goto error;
-	if (bus_dmamap_load(ch->dma.rfis_tag, ch->dma.rfis_map, ch->dma.rfis,
-	    rfsize, ahci_dmasetupc_cb, &dcba, 0) || dcba.error) {
+	error = bus_dmamap_load(ch->dma.rfis_tag, ch->dma.rfis_map, ch->dma.rfis,
+	    rfsize, ahci_dmasetupc_cb, &dcba, BUS_DMA_NOWAIT);
+	if (error != 0 || (error = dcba.error) != 0) {
 		bus_dmamem_free(ch->dma.rfis_tag, ch->dma.rfis, ch->dma.rfis_map);
 		goto error;
 	}
 	ch->dma.rfis_bus = dcba.maddr;
 	/* Data area. */
-	if (bus_dma_tag_create(bus_get_dma_tag(dev), 2, 0,
+	error = bus_dma_tag_create(bus_get_dma_tag(dev), 2, 0,
 	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR,
 	    NULL, NULL,
 	    AHCI_SG_ENTRIES * PAGE_SIZE * ch->numslots,
 	    AHCI_SG_ENTRIES, AHCI_PRD_MAX,
-	    0, busdma_lock_mutex, &ch->mtx, &ch->dma.data_tag)) {
+	    0, busdma_lock_mutex, &ch->mtx, &ch->dma.data_tag);
+	if (error != 0)
 		goto error;
-	}
 	return;
 
 error:
-	device_printf(dev, "WARNING - DMA initialization failed\n");
+	device_printf(dev, "WARNING - DMA initialization failed, error %d\n",
+	    error);
 	ahci_dmafini(dev);
 }
 

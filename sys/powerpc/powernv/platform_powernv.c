@@ -60,7 +60,8 @@ __FBSDID("$FreeBSD$");
 extern void *ap_pcpu;
 #endif
 
-extern void xicp_smp_cpu_startup(void);
+void (*powernv_smp_ap_extra_init)(void);
+
 static int powernv_probe(platform_t);
 static int powernv_attach(platform_t);
 void powernv_mem_regions(platform_t, struct mem_region *phys, int *physsz,
@@ -73,6 +74,7 @@ static int powernv_smp_get_bsp(platform_t, struct cpuref *cpuref);
 static void powernv_smp_ap_init(platform_t);
 #ifdef SMP
 static int powernv_smp_start_cpu(platform_t, struct pcpu *cpu);
+static void powernv_smp_probe_threads(platform_t);
 static struct cpu_group *powernv_smp_topo(platform_t plat);
 #endif
 static void powernv_reset(platform_t);
@@ -92,6 +94,7 @@ static platform_method_t powernv_methods[] = {
 	PLATFORMMETHOD(platform_smp_get_bsp,	powernv_smp_get_bsp),
 #ifdef SMP
 	PLATFORMMETHOD(platform_smp_start_cpu,	powernv_smp_start_cpu),
+	PLATFORMMETHOD(platform_smp_probe_threads,	powernv_smp_probe_threads),
 	PLATFORMMETHOD(platform_smp_topo,	powernv_smp_topo),
 #endif
 
@@ -380,6 +383,7 @@ powernv_smp_next_cpu(platform_t plat, struct cpuref *cpuref)
 
 	cpuref->cr_cpuid = platform_cpuref[id].cr_cpuid;
 	cpuref->cr_hwref = platform_cpuref[id].cr_hwref;
+	cpuref->cr_domain = platform_cpuref[id].cr_domain;
 
 	return (0);
 }
@@ -390,6 +394,7 @@ powernv_smp_get_bsp(platform_t plat, struct cpuref *cpuref)
 
 	cpuref->cr_cpuid = platform_cpuref[0].cr_cpuid;
 	cpuref->cr_hwref = platform_cpuref[0].cr_hwref;
+	cpuref->cr_domain = platform_cpuref[0].cr_domain;
 	return (0);
 }
 
@@ -412,8 +417,8 @@ powernv_smp_start_cpu(platform_t plat, struct pcpu *pc)
 	return (0);
 }
 
-static struct cpu_group *
-powernv_smp_topo(platform_t plat)
+static void
+powernv_smp_probe_threads(platform_t plat)
 {
 	char buf[8];
 	phandle_t cpu, dev, root;
@@ -444,18 +449,27 @@ powernv_smp_topo(platform_t plat)
 		break;
 	}
 
-	if (mp_ncpus % nthreads != 0) {
+	smp_threads_per_core = nthreads;
+	if (mp_ncpus % nthreads == 0)
+		mp_ncores = mp_ncpus / nthreads;
+}
+
+static struct cpu_group *
+powernv_smp_topo(platform_t plat)
+{
+	if (mp_ncpus % smp_threads_per_core != 0) {
 		printf("WARNING: Irregular SMP topology. Performance may be "
 		     "suboptimal (%d threads, %d on first core)\n",
-		     mp_ncpus, nthreads);
+		     mp_ncpus, smp_threads_per_core);
 		return (smp_topo_none());
 	}
 
 	/* Don't do anything fancier for non-threaded SMP */
-	if (nthreads == 1)
+	if (smp_threads_per_core == 1)
 		return (smp_topo_none());
 
-	return (smp_topo_1level(CG_SHARE_L1, nthreads, CG_FLAG_SMT));
+	return (smp_topo_1level(CG_SHARE_L1, smp_threads_per_core,
+	    CG_FLAG_SMT));
 }
 
 #endif
@@ -471,7 +485,8 @@ static void
 powernv_smp_ap_init(platform_t platform)
 {
 
-	xicp_smp_cpu_startup();
+	if (powernv_smp_ap_extra_init != NULL)
+		powernv_smp_ap_extra_init();
 }
 
 static void

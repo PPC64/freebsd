@@ -66,6 +66,7 @@
 __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
+#include <sys/eventhandler.h>
 #include <sys/kernel.h>
 #include <sys/malloc.h>
 
@@ -1124,7 +1125,8 @@ restart:
 		}
 		if (space < resid &&
 		    (atomic || space < so->so_snd.sb_lowat)) {
-			if ((so->so_state & SS_NBIO) || (flags & MSG_NBIO)) {
+			if ((so->so_state & SS_NBIO) ||
+			    (flags & (MSG_NBIO | MSG_DONTWAIT)) != 0) {
 				SOCKBUF_UNLOCK(&so->so_snd);
 				error = EWOULDBLOCK;
 				goto release;

@@ -286,7 +286,13 @@ ioread16(const volatile void *addr)
 static inline uint16_t
 ioread16be(const volatile void *addr)
 {
-	return (bswap16(readw(addr)));
+	uint16_t v;
+
+	__io_br();
+	v = (be16toh(__raw_readw(addr)));
+	__io_ar();
+
+	return (v);
 }
 #define	ioread16be(addr)	ioread16be(addr)
 #endif
@@ -304,7 +310,13 @@ ioread32(const volatile void *addr)
 static inline uint32_t
 ioread32be(const volatile void *addr)
 {
-	return (bswap32(readl(addr)));
+	uint32_t v;
+
+	__io_br();
+	v = (be32toh(__raw_readl(addr)));
+	__io_ar();
+
+	return (v);
 }
 #define	ioread32be(addr)	ioread32be(addr)
 #endif
@@ -340,7 +352,9 @@ iowrite32(uint32_t v, volatile void *addr)
 static inline void
 iowrite32be(uint32_t v, volatile void *addr)
 {
-	writel(bswap32(v), addr);
+	__io_bw();
+	__raw_writel(htobe32(v), addr);
+	__io_aw();
 }
 #define	iowrite32be(v, addr)	iowrite32be(v, addr)
 #endif

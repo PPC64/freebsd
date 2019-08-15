@@ -75,14 +75,9 @@
 #include <dev/usb/usb_bus.h>
 #endif			/* USB_GLOBAL_INCLUDE_FILE */
 
-#define	UHUB_INTR_INTERVAL 250		/* ms */
-enum {
-	UHUB_INTR_TRANSFER,
-#if USB_HAVE_TT_SUPPORT
-	UHUB_RESET_TT_TRANSFER,
-#endif
-	UHUB_N_TRANSFER,
-};
+
+#include <dev/usb/usb_hub_private.h>
+
 
 #ifdef USB_DEBUG
 static int uhub_debug = 0;
@@ -111,27 +106,6 @@ SYSCTL_INT(_hw_usb, OID_AUTO, disable_port_power, CTLFLAG_RWTUN,
     &usb_disable_port_power, 0, "Set to disable all USB port power.");
 #endif
 
-struct uhub_current_state {
-	uint16_t port_change;
-	uint16_t port_status;
-};
-
-struct uhub_softc {
-	struct uhub_current_state sc_st;/* current state */
-#if (USB_HAVE_FIXED_PORT != 0)
-	struct usb_hub sc_hub;
-#endif
-	device_t sc_dev;		/* base device */
-	struct mtx sc_mtx;		/* our mutex */
-	struct usb_device *sc_udev;	/* USB device */
-	struct usb_xfer *sc_xfer[UHUB_N_TRANSFER];	/* interrupt xfer */
-#if USB_HAVE_DISABLE_ENUM
-	int sc_disable_enumeration;
-	int sc_disable_port_power;
-#endif
-	uint8_t	sc_flags;
-#define	UHUB_FLAG_DID_EXPLORE 0x01
-};
 
 #define	UHUB_PROTO(sc) ((sc)->sc_udev->ddesc.bDeviceProtocol)
 #define	UHUB_IS_HIGH_SPEED(sc) (UHUB_PROTO(sc) != UDPROTO_FSHUB)
@@ -141,14 +115,10 @@ struct uhub_softc {
 
 /* prototypes for type checking: */
 
-static device_probe_t uhub_probe;
-static device_attach_t uhub_attach;
-static device_detach_t uhub_detach;
 static device_suspend_t uhub_suspend;
 static device_resume_t uhub_resume;
 
 static bus_driver_added_t uhub_driver_added;
-static bus_child_location_str_t uhub_child_location_string;
 static bus_child_pnpinfo_str_t uhub_child_pnpinfo_string;
 
 static usb_callback_t uhub_intr_callback;
@@ -205,7 +175,7 @@ static device_method_t uhub_methods[] = {
 	DEVMETHOD_END
 };
 
-static driver_t uhub_driver = {
+driver_t uhub_driver = {
 	.name = "uhub",
 	.methods = uhub_methods,
 	.size = sizeof(struct uhub_softc)
@@ -587,13 +557,25 @@ uhub_read_port_status(struct uhub_softc *sc, uint8_t portno)
 	struct usb_port_status ps;
 	usb_error_t err;
 
+	if (sc->sc_usb_port_errors >= UHUB_USB_PORT_ERRORS_MAX) {
+		DPRINTFN(4, "port %d, HUB looks dead, too many errors\n", portno);
+		sc->sc_st.port_status = 0;
+		sc->sc_st.port_change = 0;
+		return (USB_ERR_TIMEOUT);
+	}
+
 	err = usbd_req_get_port_status(
 	    sc->sc_udev, NULL, &ps, portno);
 
-	/* update status regardless of error */
-
-	sc->sc_st.port_status = UGETW(ps.wPortStatus);
-	sc->sc_st.port_change = UGETW(ps.wPortChange);
+	if (err == 0) {
+		sc->sc_st.port_status = UGETW(ps.wPortStatus);
+		sc->sc_st.port_change = UGETW(ps.wPortChange);
+		sc->sc_usb_port_errors = 0;
+	} else {
+		sc->sc_st.port_status = 0;
+		sc->sc_st.port_change = 0;
+		sc->sc_usb_port_errors++;
+	}
 
 	/* debugging print */
 
@@ -1124,7 +1106,7 @@ uhub_explore(struct usb_device *udev)
 	return (USB_ERR_NORMAL_COMPLETION);
 }
 
-static int
+int
 uhub_probe(device_t dev)
 {
 	struct usb_attach_arg *uaa = device_get_ivars(dev);
@@ -1138,7 +1120,7 @@ uhub_probe(device_t dev)
 	 */
 	if (uaa->info.bConfigIndex == 0 &&
 	    uaa->info.bDeviceClass == UDCLASS_HUB)
-		return (0);
+		return (BUS_PROBE_DEFAULT);
 
 	return (ENXIO);
 }
@@ -1204,7 +1186,7 @@ uhub_query_info(struct usb_device *udev, uint8_t *pnports, uint8_t *ptt)
 	return (err);
 }
 
-static int
+int
 uhub_attach(device_t dev)
 {
 	struct uhub_softc *sc = device_get_softc(dev);
@@ -1550,7 +1532,7 @@ error:
  * Called from process context when the hub is gone.
  * Detach all devices on active ports.
  */
-static int
+int
 uhub_detach(device_t dev)
 {
 	struct uhub_softc *sc = device_get_softc(dev);
@@ -1620,13 +1602,7 @@ uhub_driver_added(device_t dev, driver_t *driver)
 	usb_needs_explore_all();
 }
 
-struct hub_result {
-	struct usb_device *udev;
-	uint8_t	portno;
-	uint8_t	iface_index;
-};
-
-static void
+void
 uhub_find_iface_index(struct usb_hub *hub, device_t child,
     struct hub_result *res)
 {
@@ -1659,7 +1635,7 @@ uhub_find_iface_index(struct usb_hub *hub, device_t child,
 	res->portno = 0;
 }
 
-static int
+int
 uhub_child_location_string(device_t parent, device_t child,
     char *buf, size_t buflen)
 {

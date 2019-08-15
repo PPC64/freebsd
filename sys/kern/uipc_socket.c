@@ -886,6 +886,8 @@ solisten_wakeup(struct socket *sol)
 	}
 	SOLISTEN_UNLOCK(sol);
 	wakeup_one(&sol->sol_comp);
+	if ((sol->so_state & SS_ASYNC) && sol->so_sigio != NULL)
+		pgsigio(&sol->so_sigio, SIGIO, 0);
 }
 
 /*
@@ -1042,7 +1044,7 @@ sofree(struct socket *so)
 	 *
 	 * We used to do a lot of socket buffer and socket locking here, as
 	 * well as invoke sorflush() and perform wakeups.  The direct call to
-	 * dom_dispose() and sbrelease_internal() are an inlining of what was
+	 * dom_dispose() and sbdestroy() are an inlining of what was
 	 * necessary from sorflush().
 	 *
 	 * Notice that the socket buffer and kqueue state are torn down
@@ -1172,7 +1174,6 @@ soabort(struct socket *so)
 	KASSERT(so->so_count == 0, ("soabort: so_count"));
 	KASSERT((so->so_state & SS_PROTOREF) == 0, ("soabort: SS_PROTOREF"));
 	KASSERT(so->so_state & SS_NOFDREF, ("soabort: !SS_NOFDREF"));
-	KASSERT(so->so_qstate == SQ_NONE, ("soabort: !SQ_NONE"));
 	VNET_SO_ASSERT(so);
 
 	if (so->so_proto->pr_usrreqs->pru_abort != NULL)
@@ -1522,7 +1523,8 @@ restart:
 		}
 		if (space < resid + clen &&
 		    (atomic || space < so->so_snd.sb_lowat || space < clen)) {
-			if ((so->so_state & SS_NBIO) || (flags & MSG_NBIO)) {
+			if ((so->so_state & SS_NBIO) ||
+			    (flags & (MSG_NBIO | MSG_DONTWAIT)) != 0) {
 				SOCKBUF_UNLOCK(&so->so_snd);
 				error = EWOULDBLOCK;
 				goto release;
@@ -1980,7 +1982,11 @@ dontblock:
 			SBLASTRECORDCHK(&so->so_rcv);
 			SBLASTMBUFCHK(&so->so_rcv);
 			SOCKBUF_UNLOCK(&so->so_rcv);
-			error = uiomove(mtod(m, char *) + moff, (int)len, uio);
+			if ((m->m_flags & M_NOMAP) != 0)
+				error = m_unmappedtouio(m, moff, uio, (int)len);
+			else
+				error = uiomove(mtod(m, char *) + moff,
+				    (int)len, uio);
 			SOCKBUF_LOCK(&so->so_rcv);
 			if (error) {
 				/*
@@ -2194,7 +2200,7 @@ soreceive_stream(struct socket *so, struct sockaddr **psa, struct uio *uio,
 	/* Prevent other readers from entering the socket. */
 	error = sblock(sb, SBLOCKWAIT(flags));
 	if (error)
-		goto out;
+		return (error);
 	SOCKBUF_LOCK(sb);
 
 	/* Easy one, no space to copyout anything. */
@@ -2754,12 +2760,10 @@ sosetopt(struct socket *so, struct sockopt *sopt)
 	CURVNET_SET(so->so_vnet);
 	error = 0;
 	if (sopt->sopt_level != SOL_SOCKET) {
-		if (so->so_proto->pr_ctloutput != NULL) {
+		if (so->so_proto->pr_ctloutput != NULL)
 			error = (*so->so_proto->pr_ctloutput)(so, sopt);
-			CURVNET_RESTORE();
-			return (error);
-		}
-		error = ENOPROTOOPT;
+		else
+			error = ENOPROTOOPT;
 	} else {
 		switch (sopt->sopt_name) {
 		case SO_ACCEPTFILTER:
@@ -2772,7 +2776,12 @@ sosetopt(struct socket *so, struct sockopt *sopt)
 			error = sooptcopyin(sopt, &l, sizeof l, sizeof l);
 			if (error)
 				goto bad;
-
+			if (l.l_linger < 0 ||
+			    l.l_linger > USHRT_MAX ||
+			    l.l_linger > (INT_MAX / hz)) {
+				error = EDOM;
+				goto bad;
+			}
 			SOCK_LOCK(so);
 			so->so_linger = l.l_linger;
 			if (l.l_onoff)
@@ -4101,6 +4110,9 @@ so_linger_get(const struct socket *so)
 void
 so_linger_set(struct socket *so, int val)
 {
+
+	KASSERT(val >= 0 && val <= USHRT_MAX && val <= (INT_MAX / hz),
+	    ("%s: val %d out of range", __func__, val));
 
 	so->so_linger = val;
 }

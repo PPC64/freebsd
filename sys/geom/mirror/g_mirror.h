@@ -78,30 +78,18 @@
 					 G_MIRROR_DEVICE_FLAG_NOFAILSYNC)
 
 #ifdef _KERNEL
+#define	G_MIRROR_DEVICE_FLAG_DESTROY	0x0100000000000000ULL
+#define	G_MIRROR_DEVICE_FLAG_DRAIN	0x0200000000000000ULL
+#define	G_MIRROR_DEVICE_FLAG_CLOSEWAIT	0x0400000000000000ULL
+#define	G_MIRROR_DEVICE_FLAG_TASTING	0x0800000000000000ULL
+#define	G_MIRROR_DEVICE_FLAG_WIPE	0x1000000000000000ULL
+
 extern int g_mirror_debug;
 
-#define	G_MIRROR_DEBUG(lvl, ...)	do {				\
-	if (g_mirror_debug >= (lvl)) {					\
-		printf("GEOM_MIRROR");					\
-		if (g_mirror_debug > 0)					\
-			printf("[%u]", lvl);				\
-		printf(": ");						\
-		printf(__VA_ARGS__);					\
-		printf("\n");						\
-	}								\
-} while (0)
-#define	G_MIRROR_LOGREQ(lvl, bp, ...)	do {				\
-	if (g_mirror_debug >= (lvl)) {					\
-		printf("GEOM_MIRROR");					\
-		if (g_mirror_debug > 0)					\
-			printf("[%u]", lvl);				\
-		printf(": ");						\
-		printf(__VA_ARGS__);					\
-		printf(" ");						\
-		g_print_bio(bp);					\
-		printf("\n");						\
-	}								\
-} while (0)
+#define G_MIRROR_DEBUG(lvl, ...) \
+    _GEOM_DEBUG("GEOM_MIRROR", g_mirror_debug, (lvl), NULL, __VA_ARGS__)
+#define G_MIRROR_LOGREQ(lvl, bp, ...) \
+    _GEOM_DEBUG("GEOM_MIRROR", g_mirror_debug, (lvl), (bp), __VA_ARGS__)
 
 #define	G_MIRROR_BIO_FLAG_REGULAR	0x01
 #define	G_MIRROR_BIO_FLAG_SYNC		0x02
@@ -166,12 +154,6 @@ struct g_mirror_event {
 	int			 e_error;
 	TAILQ_ENTRY(g_mirror_event) e_next;
 };
-
-#define	G_MIRROR_DEVICE_FLAG_DESTROY	0x0100000000000000ULL
-#define	G_MIRROR_DEVICE_FLAG_DRAIN	0x0200000000000000ULL
-#define	G_MIRROR_DEVICE_FLAG_CLOSEWAIT	0x0400000000000000ULL
-#define	G_MIRROR_DEVICE_FLAG_TASTING	0x0800000000000000ULL
-#define	G_MIRROR_DEVICE_FLAG_WIPE	0x1000000000000000ULL
 
 #define	G_MIRROR_DEVICE_STATE_STARTING		0
 #define	G_MIRROR_DEVICE_STATE_RUNNING		1

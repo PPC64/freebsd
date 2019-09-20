@@ -1,6 +1,7 @@
 # $FreeBSD$
 
 .include <src.opts.mk>
+.include <meta.sys.mk>
 
 .ifndef LLVM_SRCS
 .error Please define LLVM_SRCS before including this file
@@ -8,6 +9,10 @@
 
 .ifndef SRCDIR
 .error Please define SRCDIR before including this file
+.endif
+
+.ifndef FREEBSD_REVISION
+.error Please define FREEBSD_REVISION before including this file
 .endif
 
 .PATH:		${LLVM_SRCS}/${SRCDIR}
@@ -30,14 +35,16 @@ BUILD_ARCH?=	${MACHINE_ARCH}
 TARGET_ABI=	-gnueabihf
 .elif ${TARGET_ARCH:Marm*}
 TARGET_ABI=	-gnueabi
+.elif defined(TARGET_ABI)
+TARGET_ABI:=	-${TARGET_ABI}
 .else
 TARGET_ABI=
 .endif
-VENDOR=		unknown
-OS_VERSION=	freebsd13.0
 
-LLVM_TARGET_TRIPLE?=	${TARGET_ARCH:C/amd64/x86_64/:C/arm64/aarch64/}-${VENDOR}-${OS_VERSION}${TARGET_ABI}
-LLVM_BUILD_TRIPLE?=	${BUILD_ARCH:C/amd64/x86_64/:C/arm64/aarch64/}-${VENDOR}-${OS_VERSION}
+VENDOR=		unknown
+
+LLVM_TARGET_TRIPLE?=	${TARGET_ARCH:C/amd64/x86_64/:C/arm64/aarch64/}-${VENDOR}-freebsd${FREEBSD_REVISION}${TARGET_ABI}
+LLVM_BUILD_TRIPLE?=	${BUILD_ARCH:C/amd64/x86_64/:C/arm64/aarch64/}-${VENDOR}-freebsd${FREEBSD_REVISION}
 
 CFLAGS+=	-DLLVM_DEFAULT_TARGET_TRIPLE=\"${LLVM_TARGET_TRIPLE}\"
 CFLAGS+=	-DLLVM_HOST_TRIPLE=\"${LLVM_BUILD_TRIPLE}\"

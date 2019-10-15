@@ -2353,9 +2353,9 @@ do_link_state_change(void *arg, int pending)
 	if (log_link_state_change)
 		if_printf(ifp, "link state changed to %s\n",
 		    (link_state == LINK_STATE_UP) ? "UP" : "DOWN" );
+	NET_EPOCH_EXIT(et);
 	EVENTHANDLER_INVOKE(ifnet_link_event, ifp, link_state);
 	CURVNET_RESTORE();
-	NET_EPOCH_EXIT(et);
 }
 
 /*
@@ -3614,21 +3614,8 @@ if_delmulti(struct ifnet *ifp, struct sockaddr *sa)
 {
 	struct ifmultiaddr *ifma;
 	int lastref;
-#ifdef INVARIANTS
-	struct ifnet *oifp;
 
-	NET_EPOCH_ASSERT();
-
-	CK_STAILQ_FOREACH(oifp, &V_ifnet, if_link)
-		if (ifp == oifp)
-			break;
-	if (ifp != oifp)
-		ifp = NULL;
-
-	KASSERT(ifp != NULL, ("%s: ifnet went away", __func__));
-#endif
-	if (ifp == NULL)
-		return (ENOENT);
+	KASSERT(ifp, ("%s: NULL ifp", __func__));
 
 	IF_ADDR_WLOCK(ifp);
 	lastref = 0;

@@ -23,6 +23,11 @@ RELTOP?= 	${RELDIR:C,[^/]+,..,g}
 RELOBJTOP?=	${RELTOP}
 RELSRCTOP?=	${RELTOP}
 
+.if !defined(FREEBSD_REVISION)
+FREEBSD_REVISION!= sed -n '/^REVISION=/{s,.*=,,;s,",,g;p; }' ${SRCTOP}/sys/conf/newvers.sh
+.export FREEBSD_REVISION
+.endif
+
 # site customizations that do not depend on anything!
 
 # Save MAKEOBJDIRPREFIX and don't let src-env.conf modify it.

@@ -23,7 +23,7 @@ LIB32CPUFLAGS=	-march=${COMPAT_CPUTYPE}
 .if (defined(WANT_COMPILER_TYPE) && ${WANT_COMPILER_TYPE} == gcc) || \
     (defined(X_COMPILER_TYPE) && ${X_COMPILER_TYPE} == gcc)
 .else
-LIB32CPUFLAGS+=	-target x86_64-unknown-freebsd13.0
+LIB32CPUFLAGS+= -target x86_64-unknown-freebsd${FREEBSD_REVISION}
 .endif
 LIB32CPUFLAGS+=	-m32
 LIB32WMAKEENV=	MACHINE=i386 MACHINE_ARCH=i386 \
@@ -55,9 +55,9 @@ LIB32CPUFLAGS=	-march=${COMPAT_CPUTYPE}
 .endif
 .else
 .if ${COMPAT_ARCH:Mmips64el*} != ""
-LIB32CPUFLAGS=  -target mipsel-unknown-freebsd13.0
+LIB32CPUFLAGS=  -target mipsel-unknown-freebsd${FREEBSD_REVISION}
 .else
-LIB32CPUFLAGS=  -target mips-unknown-freebsd13.0
+LIB32CPUFLAGS=  -target mips-unknown-freebsd${FREEBSD_REVISION}
 .endif
 .endif
 LIB32CPUFLAGS+= -mabi=32

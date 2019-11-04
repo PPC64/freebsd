@@ -128,10 +128,25 @@ TARGET_ABI=	gnueabihf
 TARGET_ABI=	gnueabi
 .endif
 .endif
-MACHINE_ABI?=	unknown
-MACHINE_TRIPLE?=${MACHINE_ARCH:S/amd64/x86_64/:C/[hs]f$//:S/mipsn32/mips64/}-${MACHINE_ABI}-freebsd13.0
-TARGET_ABI?=	unknown
-TARGET_TRIPLE?=	${TARGET_ARCH:S/amd64/x86_64/:C/[hs]f$//:S/mipsn32/mips64/}-${TARGET_ABI}-freebsd13.0
+MACHINE_VENDOR?=	unknown
+TARGET_VENDOR?=	unknown
+
+# The triple has the general format <arch><sub>-<vendor>-<sys>-<abi>
+# See https://clang.llvm.org/docs/CrossCompilation.html#target-triple
+.ifndef MACHINE_TRIPLE
+MACHINE_TRIPLE?=	${MACHINE_ARCH:S/amd64/x86_64/:C/[hs]f$//:S/mipsn32/mips64/}-${MACHINE_VENDOR}-freebsd${FREEBSD_REVISION}
+.ifdef MACHINE_ABI
+MACHINE_TRIPLE:=	${MACHINE_TRIPLE}-${MACHINE_ABI}
+.endif
+.endif
+
+.ifndef TARGET_TRIPLE
+TARGET_TRIPLE?=	${TARGET_ARCH:S/amd64/x86_64/:C/[hs]f$//:S/mipsn32/mips64/}-${TARGET_VENDOR}-freebsd${FREEBSD_REVISION}
+.ifdef TARGET_ABI
+TARGET_TRIPLE:=	${TARGET_TRIPLE}-${TARGET_ABI}
+.endif
+.endif
+
 KNOWN_ARCHES?=	aarch64/arm64 \
 		amd64 \
 		arm \
@@ -534,10 +549,6 @@ OSRELDATE=	0
 .endif
 
 # Set VERSION for CTFMERGE to use via the default CTFFLAGS=-L VERSION.
-.if !defined(_REVISION)
-_REVISION!=	${MAKE} -C ${SRCDIR}/release MK_AUTO_OBJ=no -V REVISION
-.export _REVISION
-.endif
 .if !defined(_BRANCH)
 _BRANCH!=	${MAKE} -C ${SRCDIR}/release MK_AUTO_OBJ=no -V BRANCH
 .export _BRANCH
@@ -548,7 +559,7 @@ SRCRELDATE!=	awk '/^\#define[[:space:]]*__FreeBSD_version/ { print $$3 }' \
 .export SRCRELDATE
 .endif
 .if !defined(VERSION)
-VERSION=	FreeBSD ${_REVISION}-${_BRANCH:C/-p[0-9]+$//} ${TARGET_ARCH} ${SRCRELDATE}
+VERSION=	FreeBSD ${FREEBSD_REVISION}-${_BRANCH:C/-p[0-9]+$//} ${TARGET_ARCH} ${SRCRELDATE}
 .export VERSION
 .endif
 
@@ -567,7 +578,7 @@ EXTRA_REVISION= _${_BRANCH:C/-PRERELEASE/.p/}
 .elif ${_BRANCH:M*-p*}
 EXTRA_REVISION=	_${_BRANCH:C/.*-p([0-9]+$)/\1/}
 .endif
-PKG_VERSION=	${_REVISION}${EXTRA_REVISION}
+PKG_VERSION=	${FREEBSD_REVISION}${EXTRA_REVISION}
 .endif
 .endif	# !defined(PKG_VERSION)
 
@@ -1858,7 +1869,7 @@ packages: .PHONY
 
 package-pkg: .PHONY
 	rm -rf /tmp/ports.${TARGET} || :
-	env ${WMAKEENV:Q} SRCDIR=${.CURDIR} PORTSDIR=${PORTSDIR} REVISION=${_REVISION} \
+	env ${WMAKEENV:Q} SRCDIR=${.CURDIR} PORTSDIR=${PORTSDIR} REVISION=${FREEBSD_REVISION} \
 		PKG_CMD=${PKG_CMD} PKG_VERSION=${PKG_VERSION} REPODIR=${REPODIR} \
 		WSTAGEDIR=${WSTAGEDIR} \
 		sh ${.CURDIR}/release/scripts/make-pkg-package.sh
@@ -3446,5 +3457,5 @@ xdev-links: .PHONY
 			ln -sf ../../${XDTP}/usr/bin/$$i \
 			    ../../../../usr/bin/${XDDIR}-$$i; \
 			ln -sf ../../${XDTP}/usr/bin/$$i \
-			    ../../../../usr/bin/${XDDIR}${_REVISION}-$$i; \
+			    ../../../../usr/bin/${XDDIR}${FREEBSD_REVISION}-$$i; \
 		done

@@ -169,6 +169,7 @@ CFLAGS+=	-funwind-tables
 
 .if ${MACHINE_CPUARCH} == powerpc
 CFLAGS+=	-mlongcall -fno-omit-frame-pointer
+LDFLAGS+=	--no-toc-optimize
 .endif
 
 .if ${MACHINE_CPUARCH} == mips

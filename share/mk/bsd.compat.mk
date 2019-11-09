@@ -78,8 +78,7 @@ LIB32LD?=${XLD}
 LIB32LD?=${LD}
 .endif
 
-
-.if ${WANT_COMPILER_TYPE} == gcc || \
+.if (defined(WANT_COMPILER_TYPE) && ${WANT_COMPILER_TYPE} == gcc) || \
     (defined(X_COMPILER_TYPE) && ${X_COMPILER_TYPE} == gcc)
 LIB32CPUFLAGS+=	-m32
 .else

@@ -360,8 +360,7 @@ __DEFAULT_NO_OPTIONS+=GDB_LIBEXEC
 __DEFAULT_YES_OPTIONS+=GDB_LIBEXEC
 .endif
 # LIB32 is supported on amd64, mips64, and powerpc64
-.if (${MACHINE_ARCH} == "amd64" || ${MACHINE_ARCH:Mmips64*} || \
-    ${MACHINE_ARCH} == "powerpc64")
+.if (${__T} == "amd64" || ${__T:Mmips64*} || ${__T} == "powerpc64")
 __DEFAULT_YES_OPTIONS+=LIB32
 .else
 BROKEN_OPTIONS+=LIB32
@@ -414,9 +413,11 @@ BROKEN_OPTIONS+=HYPERV
 BROKEN_OPTIONS+=NVME
 .endif
 
-# Sparc64 need extra crt*.o files
 .if ${__T:Msparc64}
+# Sparc64 need extra crt*.o files - PR 239851
 BROKEN_OPTIONS+=BSD_CRTBEGIN
+# PR 233405
+BROKEN_OPTIONS+=LLVM_LIBUNWIND
 .endif
 
 .if ${COMPILER_FEATURES:Mc++11} && \

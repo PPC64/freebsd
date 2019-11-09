@@ -6,9 +6,17 @@ __<${_this:T}>__:
 .if defined(_LIBCOMPAT)
 COMPAT_ARCH=	${TARGET_ARCH}
 COMPAT_CPUTYPE=	${TARGET_CPUTYPE}
+.if (defined(WANT_COMPILER_TYPE) && ${WANT_COMPILER_TYPE} == gcc) || \
+    (defined(X_COMPILER_TYPE) && ${X_COMPILER_TYPE} == gcc)
+COMPAT_COMPILER_TYPE=	gcc
+.else
+COMPAT_COMPILER_TYPE=	clang
+.endif
 .else
 COMPAT_ARCH=	${MACHINE_ARCH}
 COMPAT_CPUTYPE=	${CPUTYPE}
+.include <bsd.compiler.mk>
+COMPAT_COMPILER_TYPE=${COMPILER_TYPE}
 .endif
 
 # -------------------------------------------------------------------
@@ -20,8 +28,7 @@ LIB32CPUFLAGS=	-march=i686 -mmmx -msse -msse2
 .else
 LIB32CPUFLAGS=	-march=${COMPAT_CPUTYPE}
 .endif
-.if (defined(WANT_COMPILER_TYPE) && ${WANT_COMPILER_TYPE} == gcc) || \
-    (defined(X_COMPILER_TYPE) && ${X_COMPILER_TYPE} == gcc)
+.if ${COMPAT_COMPILER_TYPE} == gcc
 .else
 LIB32CPUFLAGS+= -target x86_64-unknown-freebsd${FREEBSD_REVISION}
 .endif
@@ -99,8 +106,7 @@ LIB32WMAKEFLAGS=	\
 
 .elif ${COMPAT_ARCH:Mmips64*} != ""
 HAS_COMPAT=32
-.if (defined(WANT_COMPILER_TYPE) && ${WANT_COMPILER_TYPE} == gcc) || \
-    (defined(X_COMPILER_TYPE) && ${X_COMPILER_TYPE} == gcc)
+.if ${COMPAT_COMPILER_TYPE} == gcc
 .if empty(COMPAT_CPUTYPE)
 LIB32CPUFLAGS=	-march=mips3
 .else
@@ -117,10 +123,12 @@ LIB32CPUFLAGS+= -mabi=32
 LIB32_MACHINE=	mips
 LIB32_MACHINE_ARCH=	mips
 .if ${COMPAT_ARCH:Mmips64el*} != ""
-LIB32WMAKEFLAGS= LD="${XLD} -m elf32ltsmip_fbsd"
+_EMULATION=	elf32ltsmip_fbsd
 .else
-LIB32WMAKEFLAGS= LD="${XLD} -m elf32btsmip_fbsd"
+_EMULATION=	elf32btsmip_fbsd
 .endif
+LIB32WMAKEFLAGS= LD="${XLD} -m ${_EMULATION}"
+LIB32LDFLAGS=	-Wl,-m${_EMULATION}
 .endif
 
 LIB32WMAKEFLAGS+= NM="${XNM}"
@@ -146,7 +154,7 @@ LIBSOFTWMAKEFLAGS=        -DCOMPAT_SOFTFP
 # In the program linking case, select LIBCOMPAT
 .if defined(NEED_COMPAT)
 .ifndef HAS_COMPAT
-.error NEED_COMPAT defined, but no LIBCOMPAT is available
+.warning NEED_COMPAT defined, but no LIBCOMPAT is available (COMPAT_ARCH == ${COMPAT_ARCH}
 .elif !${HAS_COMPAT:M${NEED_COMPAT}} && ${NEED_COMPAT} != "any"
 .error NEED_COMPAT (${NEED_COMPAT}) defined, but not in HAS_COMPAT ($HAS_COMPAT)
 .elif ${NEED_COMPAT} == "any"
@@ -170,7 +178,7 @@ _LIBCOMPAT:=	${WANT_COMPAT}
 # Generic code for each type.
 # Set defaults based on type.
 libcompat=	${_LIBCOMPAT:tl}
-_LIBCOMPAT_MAKEVARS=	_OBJTOP TMP CPUFLAGS CFLAGS CXXFLAGS \
+_LIBCOMPAT_MAKEVARS=	_OBJTOP TMP CPUFLAGS CFLAGS CXXFLAGS LDFLAGS \
 			_MACHINE _MACHINE_ARCH WMAKEENV WMAKEFLAGS WMAKE
 .for _var in ${_LIBCOMPAT_MAKEVARS}
 .if !empty(LIB${_LIBCOMPAT}${_var})
@@ -198,6 +206,7 @@ LIBCOMPATCFLAGS+=	-B${LIBCOMPATTMP}/usr/lib${libcompat}
 LIBDIR_BASE:=	/usr/lib${libcompat}
 _LIB_OBJTOP=	${LIBCOMPAT_OBJTOP}
 CFLAGS+=	${LIBCOMPATCFLAGS}
+LDFLAGS+=	${CFLAGS} ${LIBCOMPATLDFLAGS}
 MACHINE=	${LIBCOMPAT_MACHINE}
 MACHINE_ARCH=	${LIBCOMPAT_MACHINE_ARCH}
 .endif

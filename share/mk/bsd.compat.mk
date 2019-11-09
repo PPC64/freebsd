@@ -40,11 +40,62 @@ LIB32CPUFLAGS=	-mcpu=powerpc
 .else
 LIB32CPUFLAGS=	-mcpu=${COMPAT_CPUTYPE}
 .endif
+
+
+# Determines linker used for 32-bit compatibility
+# Currently LLD support for PowerPC 32-bit is not complete,
+# so falling back to ld.bfd
+
+# native build
+_LIB32LD_NATIVE=/usr/bin/ld.bfd
+# cross
+_LIB32LD_CROSS=${WORLDTMP}/usr/bin/ld.bfd
+# cross with toolchain file
+_LIB32LD_CROSS_FILE=${LOCALBASE}/bin/${CROSS_BINUTILS_PREFIX}-ld.bfd
+
+.if ${_HOST_ARCH} == "powerpc64"
+LIB32LD=	${_LIB32LD_NATIVE}
+
+.elif defined(TARGET_ARCH) && "${LINKER_TYPE}" == "lld"
+.if ${TARGET_ARCH} == "powerpc64" && defined(CROSS_TOOLCHAIN)
+.if !defined(CROSS_BINUTILS_PREFIX)
+.error 32 bit binaries on PowerPC64 requires binutils linker ld.bfd. Please set CROSS_BINUTILS_PREFIX.
+.endif
+LIB32LD=	${_LIB32LD_CROSS_FILE}
+.else
+LIB32LD=	${_LIB32LD_CROSS}
+
+.endif
+.endif
+
+
+# for other unhandled cases just use the main linker
+
+# cross building
+.if defined(XLD)
+LIB32LD?=${XLD}
+.else
+LIB32LD?=${LD}
+.endif
+
+.if (defined(WANT_COMPILER_TYPE) && ${WANT_COMPILER_TYPE} == gcc) || \
+    (defined(X_COMPILER_TYPE) && ${X_COMPILER_TYPE} == gcc)
 LIB32CPUFLAGS+=	-m32
+.else
+LIB32CPUFLAGS+=	-target powerpc-unknown-freebsd13.0
+
+.if ${LIB32LD} == "ld.bfd"
+LIB32CPUFLAGS+= -fuse-ld=bfd
+.else
+LIB32CPUFLAGS+= -fuse-ld=${LIB32LD}
+.endif
+
+.endif
+
 LIB32_MACHINE=	powerpc
 LIB32_MACHINE_ARCH=	powerpc
 LIB32WMAKEFLAGS=	\
-		LD="${XLD} -m elf32ppc_fbsd"
+		LD="${LIB32LD} -m elf32ppc_fbsd"
 
 .elif ${COMPAT_ARCH:Mmips64*} != ""
 HAS_COMPAT=32

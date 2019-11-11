@@ -412,3 +412,11 @@ CFLAGS_NO_SIMD += ${CFLAGS_NO_SIMD.${COMPILER_TYPE}}
 # These come from make.conf or the command line or the environment.
 CFLAGS += ${CFLAGS.${MACHINE_ARCH}}
 CXXFLAGS += ${CXXFLAGS.${MACHINE_ARCH}}
+
+
+# Define ld.bfd as alternative linker to workaround ld.lld bugs
+.if defined(CROSS_BINUTILS_PREFIX)
+LD_BFD=${LOCALBASE}/bin/${CROSS_BINUTILS_PREFIX}-ld.bfd
+.else
+LD_BFD=${OBJTOP}/tmp/usr/bin/ld.bfd
+.endif

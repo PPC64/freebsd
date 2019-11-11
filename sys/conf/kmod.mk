@@ -169,8 +169,8 @@ CFLAGS+=	-funwind-tables
 
 .if ${MACHINE_CPUARCH} == powerpc
 CFLAGS+=	-mlongcall -fno-omit-frame-pointer
-.if "${COMPILER_TYPE}" == "clang" && "${LINKER_TYPE}" == "lld"
-# TOC optimization in LLD9 currently breaks kernel modules, so disable it
+.if ${LINKER_TYPE} == "lld"
+# TOC optimization in LLD (9.0) currently breaks kernel modules, so disable it
 LDFLAGS+=	--no-toc-optimize
 .endif
 .endif

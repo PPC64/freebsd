@@ -9896,6 +9896,13 @@ bool IntExprEvaluator::VisitBuiltinCallExpr(const CallExpr *E,
       }
     }
 
+    // Don't emit call to external __atomic_always_lock_free for
+    // target FreeBSD on PowerPC 32-bit
+    if (Info.Ctx.getTargetInfo().getTriple().isOSFreeBSD() &&
+        Info.Ctx.getTargetInfo().getTriple().getArch() == llvm::Triple::ppc) {
+        return Success(0, E);
+    }
+
     return BuiltinOp == Builtin::BI__atomic_always_lock_free ?
         Success(0, E) : Error(E);
   }

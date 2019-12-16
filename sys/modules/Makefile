@@ -761,12 +761,12 @@ _nvd=		nvd
 _nvme=		nvme
 _pccard=	pccard
 _wi=		wi
+_virtio=	virtio
 .endif
 
 .if ${MACHINE_ARCH} == "powerpc64"
 _ipmi=		ipmi
 _nvram=		opal_nvram
-_virtio=	virtio
 .endif
 .if ${MACHINE_ARCH} == "powerpc64" || ${MACHINE_ARCH} == "powerpc"
 # Don't build powermac_nvram for powerpcspe, it's never supported.

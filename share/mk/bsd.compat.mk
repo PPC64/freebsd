@@ -48,8 +48,7 @@ LIB32CPUFLAGS=	-mcpu=powerpc
 LIB32CPUFLAGS=	-mcpu=${COMPAT_CPUTYPE}
 .endif
 
-.if (defined(WANT_COMPILER_TYPE) && ${WANT_COMPILER_TYPE} == gcc) || \
-    (defined(X_COMPILER_TYPE) && ${X_COMPILER_TYPE} == gcc)
+.if ${COMPAT_COMPILER_TYPE} == "gcc"
 LIB32CPUFLAGS+=	-m32
 .else
 LIB32CPUFLAGS+=	-target powerpc-unknown-freebsd13.0

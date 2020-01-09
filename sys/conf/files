@@ -788,6 +788,7 @@ dev/aac/aac_debug.c		optional aac
 dev/aac/aac_disk.c		optional aac
 dev/aac/aac_pci.c		optional aac pci
 dev/aacraid/aacraid.c		optional aacraid
+dev/aacraid/aacraid_be.c	optional aacraid
 dev/aacraid/aacraid_cam.c	optional aacraid scbus
 dev/aacraid/aacraid_debug.c	optional aacraid
 dev/aacraid/aacraid_pci.c	optional aacraid pci

@@ -228,6 +228,12 @@ MALLOC_DEFINE(M_AACRAIDBUF, "aacraid_buf", "Buffers for the AACRAID driver");
 SYSCTL_NODE(_hw, OID_AUTO, aacraid, CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
     "AACRAID driver parameters");
 
+/* DEBUG { */
+
+static uint32_t aac_cmd_id = 1;
+
+/* DEBUG } */
+
 /*
  * Device Interface
  */
@@ -1105,6 +1111,7 @@ aacraid_alloc_command(struct aac_softc *sc, struct aac_command **cmp)
 		return (EBUSY);
 	}
 
+	cm->cm_cmd_id = atomic_fetchadd_32(&aac_cmd_id, 1);
 	*cmp = cm;
 	return(0);
 }
@@ -1123,6 +1130,7 @@ aacraid_release_command(struct aac_command *cm)
 	mtx_assert(&sc->aac_io_lock, MA_OWNED);
 
 	/* (re)initialize the command/FIB */
+	cm->cm_cmd_id = 0;
 	cm->cm_sgtable = NULL;
 	cm->cm_flags = 0;
 	cm->cm_complete = NULL;

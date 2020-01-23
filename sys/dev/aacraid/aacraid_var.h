@@ -204,6 +204,8 @@ struct aac_command
 	int			cm_index;
 	bus_dma_tag_t		cm_passthr_dmat;	/* passthrough buffer/command
 							 * DMA tag */
+	u_int32_t		cm_cmd_id;
+	const char		*cm_cmd_str;
 };
 
 struct aac_fibmap {

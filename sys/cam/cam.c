@@ -53,6 +53,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/libkern.h>
 #include <cam/cam_queue.h>
 #include <cam/cam_xpt.h>
+#include <sys/kdb.h>
 
 FEATURE(scbus, "SCSI devices support");
 
@@ -452,9 +453,11 @@ cam_error_string(struct cam_device *device, union ccb *ccb, char *str,
 		if (entry == NULL)
 			sbuf_printf(&sb, "CAM status: Unknown (%#x)\n",
 				    ccb->ccb_h.status);
-		else
+		else {
 			sbuf_printf(&sb, "CAM status: %s\n",
 				    entry->status_text);
+			kdb_enter("manual enter", "cam error");
+		}
 	}
 
 	if (flags & CAM_ESF_PROTO_STATUS) {

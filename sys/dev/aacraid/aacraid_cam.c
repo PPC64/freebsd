@@ -51,12 +51,16 @@ __FBSDID("$FreeBSD$");
 #include <cam/cam_periph.h>
 #include <cam/cam_sim.h>
 #include <cam/cam_xpt_sim.h>
+#include <cam/cam_xpt_internal.h>
 #include <cam/scsi/scsi_all.h>
 #include <cam/scsi/scsi_message.h>
 
 #include <sys/bus.h>
 #include <sys/conf.h>
 #include <sys/disk.h>
+
+#include <sys/kdb.h>
+#include <sys/ktr.h>
 
 #include <machine/md_var.h>
 #include <machine/bus.h>
@@ -139,6 +143,91 @@ DRIVER_MODULE(aacraidp, aacraid, aacraid_pass_driver, aacraid_pass_devclass, 0, 
 MODULE_DEPEND(aacraidp, cam, 1, 1, 1);
 
 MALLOC_DEFINE(M_AACRAIDCAM, "aacraidcam", "AACRAID CAM info");
+
+/* DEBUG STUFF { */
+
+static const char *
+aac_cmd2str(u_int8_t cmd)
+{
+	switch (cmd) {
+		case READ_6:		return "READ_6";
+		case WRITE_6:		return "WRITE_6";
+		case READ_10:		return "READ_10";
+		case WRITE_10:		return "WRITE_10";
+		case READ_12:		return "READ_12";
+		case WRITE_12:		return "WRITE_12";
+		case READ_16:		return "READ_16";
+		case WRITE_16:		return "WRITE_16";
+		case INQUIRY:		return "INQUIRY";
+		case REPORT_LUNS:	return "REPORT_LUNS";
+		case START_STOP:	return "START_STOP";
+		case TEST_UNIT_READY:	return "TEST_UNIT_READY";
+		case REQUEST_SENSE:	return "REQUEST_SENSE";
+		case READ_CAPACITY:	return "READ_CAPACITY";
+		case SERVICE_ACTION_IN:	return "SERVICE_ACTION_IN";
+		case MODE_SENSE_6:	return "MODE_SENSE_6";
+		case SYNCHRONIZE_CACHE:	return "SYNCHRONIZE_CACHE";
+		default:		return "CMD_UNK";
+	}
+}
+
+#if 0
+static const char *
+aac_fibcmd2str(int cmd)
+{
+	switch (cmd) {
+		case RawIo:			return "RawIo";
+		case RawIo2:			return "RawIo2";
+		case ContainerCommand:		return "ContainerCommand";
+		case ContainerCommand64:	return "ContainerCommand64";
+		default:			return "FIBCMD_UNK";
+	}
+}
+
+static int match_enable = 0;
+#define MATCH_PATH(path)	(match_path(path, 2, 0, 16, 0) && match_enable)
+#define NMATCH_PATH(path)	(0 && MATCH_PATH(NULL))
+
+static int
+match_path(struct cam_path *path,
+    u_int32_t unit, u_int32_t bus, u_int target, u_int64_t lun)
+{
+	u_int32_t cunit;
+	u_int32_t cbus;
+	u_int ctarget;
+	u_int64_t clun;
+
+	if (path == NULL || path->bus == NULL ||
+	    path->target == NULL || path->device == NULL)
+		return (0);
+
+	cunit = path->bus->sim->unit_number;
+	cbus = path->bus->sim->bus_id;
+	ctarget = path->target->target_id;
+	clun = path->device->lun_id;
+
+	return ((unit == cunit && bus == cbus &&
+		target == ctarget && lun == clun)? 1 : 0);
+}
+
+static void
+print_path(union ccb *ccb)
+{
+	char xpt_str[128];
+
+	if (NMATCH_PATH(ccb->ccb_h.path)) {
+		xpt_path_string(ccb->ccb_h.path, xpt_str, sizeof(xpt_str));
+		printf("%s: %s %s (%#x)\n",
+			__func__, xpt_str,
+			xpt_action_name(ccb->ccb_h.func_code),
+			ccb->ccb_h.func_code);
+		DELAY(100);
+	}
+}
+
+#endif
+
+/* DEBUG STUFF } */
 
 static void
 aac_set_scsi_error(struct aac_softc *sc, union ccb *ccb, u_int8_t status, 
@@ -399,6 +488,7 @@ aac_container_rw_command(struct cam_sim *sim, union ccb *ccb, u_int8_t *cmdp)
 
 	blockno = aac_eval_blockno(cmdp);
 
+	cm->cm_cmd_str = aac_cmd2str(*cmdp);
 	cm->cm_complete = aac_container_complete;
 	cm->cm_ccb = ccb;
 	cm->cm_timestamp = time_uptime;
@@ -953,6 +1043,10 @@ aac_passthrough_command(struct cam_sim *sim, union ccb *ccb)
 			AAC_FIBSTATE_ASYNC	 |
 			AAC_FIBSTATE_FAST_RESPONSE;
 
+	cm->cm_cmd_str = aac_cmd2str(srb->cdb[0]);
+	CTR2(KTR_DEV, "ptcmd: %4d: %s",
+		cm->cm_cmd_id, cm->cm_cmd_str);
+
 	aac_enqueue_ready(cm);
 	aacraid_startio(cm->cm_sc);
 }
@@ -1128,6 +1222,7 @@ aac_container_complete(struct aac_command *cm)
 
 	fwprintf(cm->cm_sc, HBA_FLAGS_DBG_FUNCTION_ENTRY_B, "");
 	ccb = cm->cm_ccb;
+
 	status = le32toh(((u_int32_t *)cm->cm_fib->data)[0]);
 
 	if (cm->cm_flags & AAC_CMD_RESET) {
@@ -1154,6 +1249,7 @@ aac_cam_complete(struct aac_command *cm)
 	sc = cm->cm_sc;
 	fwprintf(sc, HBA_FLAGS_DBG_FUNCTION_ENTRY_B, "");
 	ccb = cm->cm_ccb;
+
 	srbr = (struct aac_srb_response *)&cm->cm_fib->data[0];
 	aac_srb_response_toh(srbr);
 
@@ -1241,6 +1337,15 @@ aac_cam_complete(struct aac_command *cm)
 			}
 		}
 	}
+
+	if (srbr->srb_status == CAM_REQ_CMP)
+		CTR4(KTR_DEV, "ptok:  %4d: %s: 0x%04x, REQ_CMP, 0x%04x",
+			cm->cm_cmd_id, cm->cm_cmd_str,
+			srbr->fib_status, srbr->scsi_status);
+	else
+		CTR5(KTR_DEV, "pterr: %4d: %s: 0x%04x, 0x%04x, 0x%04x",
+			cm->cm_cmd_id, cm->cm_cmd_str,
+			srbr->fib_status, srbr->srb_status, srbr->scsi_status);
 
 	aacraid_release_command(cm);
 	xpt_done(ccb);

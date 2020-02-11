@@ -146,6 +146,41 @@ MALLOC_DEFINE(M_AACRAIDCAM, "aacraidcam", "AACRAID CAM info");
 
 /* DEBUG STUFF { */
 
+void		aac_unmap_command(struct aac_command *cm);
+
+#define UNEXPECTED(msg)		kdb_enter("unexpected", msg)
+#define PAUSE(msg)		kdb_enter("pause", msg)
+
+#define	KDB_ON_PTERRS	2
+#if KDB_ON_PTERRS
+static int kdb_on_pterrs = 2;
+static int pterrs = 0;
+#endif
+
+#define LAST_COMMANDS_N		128
+static int last_command = 0;
+static int last_command_wrapped = 0;
+static struct aac_command last_commands[LAST_COMMANDS_N];
+
+static void save_command(struct aac_command *cm)
+{
+	struct aac_command *scm;
+
+	scm = &last_commands[last_command];
+	last_command++;
+	if (last_command == LAST_COMMANDS_N) {
+		last_command_wrapped++;
+		last_command = 0;
+	}
+
+	memcpy(scm, cm, sizeof(*cm));
+}
+
+#ifdef DEBUG_CMDLEN
+static int maxrdlen = 0;
+static int maxwrlen = 0;
+#endif
+
 static const char *
 aac_cmd2str(u_int8_t cmd)
 {
@@ -209,23 +244,72 @@ match_path(struct cam_path *path,
 	return ((unit == cunit && bus == cbus &&
 		target == ctarget && lun == clun)? 1 : 0);
 }
+#endif
 
-static void
-print_path(union ccb *ccb)
+#define	KTR_STR_NDX_MAX		8192
+static int  ktr_str_ndx = 0;
+static char ktr_str[KTR_STR_NDX_MAX][128];
+
+static const char *
+get_xpt_path(union ccb *ccb, char *buf, size_t bufsz)
 {
-	char xpt_str[128];
-
-	if (NMATCH_PATH(ccb->ccb_h.path)) {
-		xpt_path_string(ccb->ccb_h.path, xpt_str, sizeof(xpt_str));
-		printf("%s: %s %s (%#x)\n",
-			__func__, xpt_str,
-			xpt_action_name(ccb->ccb_h.func_code),
-			ccb->ccb_h.func_code);
-		DELAY(100);
-	}
+	xpt_path_string(ccb->ccb_h.path, buf, bufsz);
+	return (buf);
 }
 
-#endif
+static const char *
+get_cdb_str(uint8_t *cdb, size_t cdb_len, char *buf)
+{
+	size_t i;
+
+	for (i = 0; i < cdb_len; i++)
+		sprintf(&buf[3*i], " %02x", cdb[i]);
+	return (buf);
+}
+
+static uint8_t *
+get_cdb(union ccb *ccb)
+{
+	return (ccb->ccb_h.flags & CAM_CDB_POINTER ?
+		ccb->csio.cdb_io.cdb_ptr : ccb->csio.cdb_io.cdb_bytes);
+}
+
+static uint8_t
+get_cmd(union ccb *ccb)
+{
+	return (get_cdb(ccb)[0]);
+}
+
+static const char *
+get_dbg_str(union ccb *ccb)
+{
+	char *dbgstr;
+
+	dbgstr = ktr_str[ktr_str_ndx++];
+	if (ktr_str_ndx == KTR_STR_NDX_MAX)
+		ktr_str_ndx = 0;
+
+	get_xpt_path(ccb, dbgstr, sizeof(ktr_str[0]));
+	get_cdb_str(get_cdb(ccb), ccb->csio.cdb_len,
+		&dbgstr[strlen(dbgstr)]);
+
+	return (dbgstr);
+}
+
+static int
+log_filter(union ccb *ccb)
+{
+	uint8_t cmd;
+
+	cmd = get_cmd(ccb);
+
+	switch (cmd) {
+		case INQUIRY:
+			return (0);
+		default:
+			return (1);
+	}
+}
 
 /* DEBUG STUFF } */
 
@@ -706,6 +790,7 @@ aac_container_special_command(struct cam_sim *sim, union ccb *ccb,
 			struct aac_fib *fib;
 			struct aac_cnt_config *ccfg;
 
+			kdb_enter("unexpected", "xxx");
 			if (aacraid_alloc_command(sc, &cm)) {
 				struct aac_event *event;
 
@@ -938,6 +1023,7 @@ aac_passthrough_command(struct cam_sim *sim, union ccb *ccb)
 	struct	aac_command *cm;
 	struct	aac_fib *fib;
 	struct	aac_srb *srb;
+	struct	timeval tv;
 
 	camsc = (struct aac_cam *)cam_sim_softc(sim);
 	sc = camsc->inf->aac_sc;
@@ -1026,7 +1112,8 @@ aac_passthrough_command(struct cam_sim *sim, union ccb *ccb)
 	srb->bus = camsc->inf->BusNumber - 1; /* Bus no. rel. to the card */
 	srb->target = ccb->ccb_h.target_id;
 	srb->lun = ccb->ccb_h.target_lun;
-	srb->timeout = ccb->ccb_h.timeout;	/* XXX */
+	/* srb->timeout = ccb->ccb_h.timeout;	XXX */
+	srb->timeout = 30;
 	srb->retry_limit = 0;
 	aac_srb_tole(srb);
 
@@ -1043,9 +1130,27 @@ aac_passthrough_command(struct cam_sim *sim, union ccb *ccb)
 			AAC_FIBSTATE_ASYNC	 |
 			AAC_FIBSTATE_FAST_RESPONSE;
 
-	cm->cm_cmd_str = aac_cmd2str(srb->cdb[0]);
-	CTR2(KTR_DEV, "ptcmd: %4d: %s",
-		cm->cm_cmd_id, cm->cm_cmd_str);
+	if (log_filter(ccb)) {
+		cm->cm_cmd_str = aac_cmd2str(srb->cdb[0]);
+		getmicrotime(&tv);
+		CTR6(KTR_DEV, "ptcmd: %3d.%06d %4d: %s (%d) %s",
+			tv.tv_sec, tv.tv_usec,
+			cm->cm_cmd_id, cm->cm_cmd_str, cm->cm_datalen,
+			get_dbg_str(ccb));
+#ifdef DEBUG_CMDLEN
+		if ((cm->cm_flags & AAC_CMD_DATAIN) && cm->cm_datalen > maxrdlen) {
+			maxrdlen = cm->cm_datalen;
+			CTR1(KTR_DEV, "maxrdlen increased (%d)", maxrdlen);
+			device_printf(sc->aac_dev, "maxrdlen increased (%d)\n", maxrdlen);
+			PAUSE("maxrdlen increased");
+		} else if ((cm->cm_flags & AAC_CMD_DATAOUT) && cm->cm_datalen > maxwrlen) {
+			maxwrlen = cm->cm_datalen;
+			CTR1(KTR_DEV, "maxwrlen increased (%d)", maxwrlen);
+			device_printf(sc->aac_dev, "maxwrlen increased (%d)\n", maxwrlen);
+			PAUSE("maxwrlen increased");
+		}
+#endif
+	}
 
 	aac_enqueue_ready(cm);
 	aacraid_startio(cm->cm_sc);
@@ -1245,6 +1350,8 @@ aac_cam_complete(struct aac_command *cm)
 	union	ccb *ccb;
 	struct 	aac_srb_response *srbr;
 	struct	aac_softc *sc;
+	u_int8_t scommand = 0x10;
+	struct	timeval tv;
 
 	sc = cm->cm_sc;
 	fwprintf(sc, HBA_FLAGS_DBG_FUNCTION_ENTRY_B, "");
@@ -1299,6 +1406,7 @@ aac_cam_complete(struct aac_command *cm)
 				command = ccb->csio.cdb_io.cdb_ptr[0];
 			else
 				command = ccb->csio.cdb_io.cdb_bytes[0];
+			scommand = command;
 
 			if (command == INQUIRY) {
 				/* Ignore Data Overrun errors on INQUIRY */
@@ -1338,15 +1446,48 @@ aac_cam_complete(struct aac_command *cm)
 		}
 	}
 
-	if (srbr->srb_status == CAM_REQ_CMP)
-		CTR4(KTR_DEV, "ptok:  %4d: %s: 0x%04x, REQ_CMP, 0x%04x",
-			cm->cm_cmd_id, cm->cm_cmd_str,
-			srbr->fib_status, srbr->scsi_status);
-	else
-		CTR5(KTR_DEV, "pterr: %4d: %s: 0x%04x, 0x%04x, 0x%04x",
-			cm->cm_cmd_id, cm->cm_cmd_str,
-			srbr->fib_status, srbr->srb_status, srbr->scsi_status);
 
+	if (log_filter(ccb)) {
+		getmicrotime(&tv);
+		if (srbr->srb_status == CAM_REQ_CMP) {
+			CTR6(KTR_DEV, "ptok: %3d.%06d %4d: %s: 0x%04x, REQ_CMP, 0x%04x",
+				tv.tv_sec, tv.tv_usec,
+				cm->cm_cmd_id, cm->cm_cmd_str,
+				srbr->fib_status, srbr->scsi_status);
+#if KDB_ON_PTERRS
+			if (pterrs > 0)
+				pterrs--;
+#endif
+		} else {
+			CTR6(KTR_DEV, "pterr: %3d.%06d: %4d: 0x%04x, 0x%04x, 0x%04x",
+				tv.tv_sec, tv.tv_usec,
+				cm->cm_cmd_id,
+				srbr->fib_status, srbr->srb_status, srbr->scsi_status);
+#if KDB_ON_PTERRS
+			pterrs++;
+			if (scommand != INQUIRY && scommand != 0x10 &&
+			    scommand != MODE_SENSE_6 &&
+			    srbr->srb_status != CAM_REQ_CMP &&
+			    pterrs >= kdb_on_pterrs) {
+				CTR1(KTR_DEV, "srb_status=0x%04x", srbr->srb_status);
+				if (ccb->ccb_h.status & CAM_AUTOSNS_VALID)
+					scsi_sense_print(&ccb->csio);
+				UNEXPECTED("srb_status failed");
+			}
+#endif
+		}
+	}
+
+#if 0
+	if (srbr->scsi_status == 0x82) {
+		if (ccb->ccb_h.status & CAM_AUTOSNS_VALID)
+			scsi_sense_print(&ccb->csio);
+		UNEXPECTED("scsi_status");
+	}
+#endif
+
+	save_command(cm);
+	aac_unmap_command(cm);
 	aacraid_release_command(cm);
 	xpt_done(ccb);
 }

@@ -456,7 +456,7 @@ cam_error_string(struct cam_device *device, union ccb *ccb, char *str,
 		else {
 			sbuf_printf(&sb, "CAM status: %s\n",
 				    entry->status_text);
-			kdb_enter("manual enter", "cam error");
+			/* kdb_enter("manual enter", "cam error"); */
 		}
 	}
 

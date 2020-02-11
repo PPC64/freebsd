@@ -537,7 +537,9 @@ extern void	aacraid_print_aif(struct aac_softc *sc,
 # define aacraid_print_queues(sc)
 
 # define AAC_PRINT_FIB(sc, fib)
-# define aacraid_print_aif(sc, aac_aif_command)
+/* # define aacraid_print_aif(sc, aac_aif_command) */
+extern void	aacraid_print_aif(struct aac_softc *sc,
+			      struct aac_aif_command *aif);
 #endif
 
 struct aac_code_lookup {

@@ -170,6 +170,7 @@ aacraid_print_fib(struct aac_softc *sc, struct aac_fib *fib, const char *caller)
 		break;
 	}
 }
+#endif /* AACRAID_DEBUG */
 
 /*
  * Describe an AIF we have received.
@@ -449,7 +450,6 @@ aacraid_print_aif(struct aac_softc *sc, struct aac_aif_command *aif)
 		break;
 	}
 }
-#endif /* AACRAID_DEBUG */
 
 /*
  * Debug flags to be put into the HBA flags field when initialized

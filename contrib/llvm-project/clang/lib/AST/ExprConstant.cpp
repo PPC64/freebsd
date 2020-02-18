@@ -9873,6 +9873,9 @@ bool IntExprEvaluator::VisitBuiltinCallExpr(const CallExpr *E,
 
     // Check power-of-two.
     CharUnits Size = CharUnits::fromQuantity(SizeVal.getZExtValue());
+    if (Size > Info.Ctx.toCharUnitsFromBits(
+                   Info.Ctx.getTargetInfo().getMaxAtomicPromoteWidth()))
+      return Success(0, E);
     if (Size.isPowerOfTwo()) {
       // Check against inlining width.
       unsigned InlineWidthBits =

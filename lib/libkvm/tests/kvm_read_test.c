@@ -1,5 +1,6 @@
 /*-
  * Copyright (c) 2017 Enji Cooper <ngie@freebsd.org>
+ * Copyright (c) 2020 Alfredo Dal'Ava Junior <alfredo@freebsd.org>
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -21,6 +22,8 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
+ *
+ * From: FreeBSD: src/lib/libkvm/tests/kvm_geterr_test.c
  */
 
 #include <sys/cdefs.h>
@@ -49,7 +52,7 @@ ATF_TC_HEAD(kvm_read_positive_test_no_error, tc)
 {
 
 	atf_tc_set_md_var(tc, "descr",
-	    "test that kvm_geterr(kd) when kd contains an error returns an error message");
+	    "test that kvm_read returns a sane value");
 	atf_tc_set_md_var(tc, "require.user", "root");
 }
 
@@ -65,7 +68,8 @@ ATF_TC_BODY(kvm_read_positive_test_no_error, tc)
 		{ NULL, 0, 0, 0, 0 },
 	};
 	ssize_t rc;
-	int mp_maxcpus, retcode;
+	int sysctl_maxcpus, mp_maxcpus, retcode;
+	size_t len = sizeof(sysctl_maxcpus);
 
 	errbuf_clear();
 	kd = kvm_open2(NULL, NULL, O_RDONLY, errbuf, NULL);
@@ -88,8 +92,6 @@ ATF_TC_BODY(kvm_read_positive_test_no_error, tc)
 	    strerror(errno));
 
 	/* Check if value read from kvm_read is sane */
-	int sysctl_maxcpus = 0;
-	size_t len = sizeof(sysctl_maxcpus);
         retcode = sysctlbyname("kern.smp.maxcpus", &sysctl_maxcpus, &len, NULL, 0);
 	ATF_REQUIRE_MSG(retcode == 0, "sysctl read failed : %d", retcode);
 	ATF_REQUIRE_EQ_MSG(mp_maxcpus, sysctl_maxcpus,

@@ -61,7 +61,7 @@ FN_RET FN_NAME_VSX FN_PARAMS;
 
 DEFINE_UIFUNC(, FN_RET, FN_NAME, FN_PARAMS)
 {
-	if (cpu_features & PPC_FEATURE_HAS_VSX)
+	if (cpu_features2 & PPC_FEATURE2_ARCH_2_07)
 		return (FN_NAME_VSX);
 	else
 		return (FN_NAME_NOVSX);

@@ -37,6 +37,7 @@
 #include "i40e_prototype.h"
 #include "virtchnl.h"
 
+#include "ixl_debug.h"
 
 /**
  * i40e_set_mac_type - Sets MAC type
@@ -3101,6 +3102,7 @@ enum i40e_status_code i40e_aq_add_macvlan(struct i40e_hw *hw, u16 seid,
 	/* prep the rest of the request */
 	i40e_fill_default_direct_cmd_desc(&desc, i40e_aqc_opc_add_macvlan);
 	cmd->num_addresses = CPU_TO_LE16(count);
+	DPRINTF("seid=0x%04x", seid);
 	cmd->seid[0] = CPU_TO_LE16(I40E_AQC_MACVLAN_CMD_SEID_VALID | seid);
 	cmd->seid[1] = 0;
 	cmd->seid[2] = 0;

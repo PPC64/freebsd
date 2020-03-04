@@ -118,6 +118,34 @@ static char *ixl_fec_string[3] = {
 
 MALLOC_DEFINE(M_IXL, "ixl", "ixl driver allocations");
 
+/* DEBUG { */
+#ifdef IXL_DEBUG
+
+u32 ixl_adminq_dbg;
+u32 ixl_dbg_mask;
+u32 ixl_debug_mask;
+
+void ixl_dbg_on(struct ixl_pf *pf)
+{
+	ixl_adminq_dbg = 1;
+
+	ixl_dbg_mask = pf->dbg_mask;
+	ixl_debug_mask = pf->hw.debug_mask;
+	pf->dbg_mask = IXL_DBG_ALL;
+	pf->hw.debug_mask = IXL_DBG_ALL;
+}
+
+void ixl_dbg_off(struct ixl_pf *pf)
+{
+	ixl_adminq_dbg = 0;
+
+	pf->dbg_mask = ixl_dbg_mask;
+	pf->hw.debug_mask = ixl_debug_mask;
+}
+
+#endif
+/* DEBUG } */
+
 /*
 ** Put the FW, API, NVM, EEtrackID, and OEM version information into a string
 */
@@ -1394,44 +1422,16 @@ ixl_add_hw_filters(struct ixl_vsi *vsi, struct ixl_ftl_head *to_add, int cnt)
 		if (++j == cnt)
 			break;
 	}
-	if (j != cnt) {
-		/* Something went wrong */
-		device_printf(dev,
-		    "%s ERROR: list of filters to short expected: %d, found: %d\n",
-		    __func__, cnt, j);
-		ixl_free_filters(to_add);
-		goto out_free;
-	}
-
-	status = i40e_aq_add_macvlan(hw, vsi->seid, a, j, NULL);
-	if (status == I40E_SUCCESS) {
-		LIST_CONCAT(&vsi->ftl, to_add, ixl_mac_filter, ftle);
-		vsi->num_hw_filters += j;
-		goto out_free;
-	}
-
-	device_printf(dev,
-	    "i40e_aq_add_macvlan status %s, error %s\n",
-	    i40e_stat_str(hw, status),
-	    i40e_aq_str(hw, hw->aq.asq_last_status));
-	j = 0;
-
-	/* Verify which filters were actually configured in HW
-	 * and add them to the list */
-	LIST_FOREACH_SAFE(f, to_add, ftle, fn) {
-		LIST_REMOVE(f, ftle);
-		if (a[j].match_method == I40E_AQC_MM_ERR_NO_RES) {
-			ixl_dbg_filter(pf,
-			    "%s filter " MAC_FORMAT " VTAG: %d not added\n",
-			    __func__,
-			    MAC_FORMAT_ARGS(f->macaddr),
-			    f->vlan);
-			free(f, M_IXL);
-		} else {
-			LIST_INSERT_HEAD(&vsi->ftl, f, ftle);
-			vsi->num_hw_filters++;
-		}
-		j++;
+	if (j > 0) {
+		ixl_dbg_on(pf);
+		status = i40e_aq_add_macvlan(hw, vsi->seid, a, j, NULL);
+		if (status)
+			device_printf(dev, "i40e_aq_add_macvlan status %s, "
+			    "error %s\n", i40e_stat_str(hw, status),
+			    i40e_aq_str(hw, hw->aq.asq_last_status));
+		else
+			vsi->hw_filters_add += j;
+		ixl_dbg_off(pf);
 	}
 
 out_free:

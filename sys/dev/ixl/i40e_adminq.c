@@ -38,6 +38,8 @@
 #include "i40e_adminq.h"
 #include "i40e_prototype.h"
 
+#include "ixl_debug.h"
+
 /**
  *  i40e_adminq_init_regs - Initialize AdminQ registers
  *  @hw: pointer to the hardware structure
@@ -951,6 +953,50 @@ enum i40e_status_code i40e_asq_send_command(struct i40e_hw *hw,
 				CPU_TO_LE32(I40E_HI_DWORD(dma_buff->pa));
 		desc_on_ring->params.external.addr_low =
 				CPU_TO_LE32(I40E_LO_DWORD(dma_buff->pa));
+	}
+
+	if (ixl_adminq_dbg) {
+		/* command */
+		DPRINTF("flags=0x%04x", LE16_TO_CPU(desc_on_ring->flags));
+		DPRINTF("opcode=0x%04x", LE16_TO_CPU(desc_on_ring->opcode));
+		DPRINTF("datalen=0x%04x", LE16_TO_CPU(desc_on_ring->datalen));
+		DPRINTF("retval=0x%04x", LE16_TO_CPU(desc_on_ring->retval));
+		DPRINTF("cookie_high=0x%08x", desc_on_ring->cookie_high);
+		DPRINTF("cookie_low=0x%08x", desc_on_ring->cookie_low);
+		DPRINTF("Num_addrs=0x%04x", LE16_TO_CPU(*(__le16 *)(&desc_on_ring->params.raw[0])));
+		DPRINTF("SEID0=0x%04x", LE16_TO_CPU(*(__le16 *)(&desc_on_ring->params.raw[2])));
+		DPRINTF("SEID1=0x%04x", LE16_TO_CPU(*(__le16 *)(&desc_on_ring->params.raw[4])));
+		DPRINTF("SEID2=0x%04x", LE16_TO_CPU(*(__le16 *)(&desc_on_ring->params.raw[6])));
+		DPRINTF("data_addr_hi=0x%08x", LE32_TO_CPU(desc_on_ring->params.external.addr_high));
+		DPRINTF("data_addr_lo=0x%08x", LE32_TO_CPU(desc_on_ring->params.external.addr_low));
+
+		if (buff) {
+			u8 *u = buff;
+
+			DPRINTF("buff=0x%016lx", (uintptr_t)buff);
+			DPRINTF("buff_size=0x%04x", buff_size);
+			DPRINTF("MAC=%02x:%02x:%02x:%02x:%02x:%02x",
+				u[0], u[1], u[2], u[3], u[4], u[5]);
+			DPRINTF("VLAN=0x%04x", LE16_TO_CPU(*(__le16 *)(u + 6)));
+			DPRINTF("flags=0x%04x", LE16_TO_CPU(*(__le16 *)(u + 8)));
+			DPRINTF("Q_num=0x%04x", LE16_TO_CPU(*(__le16 *)(u + 10)));
+			DPRINTF("res=0x%08x", LE16_TO_CPU(*(__le16 *)(u + 12)));
+		}
+
+		/* response */
+		/*
+		DPRINTF("flags=0x%04x\n", desc->flags);
+		DPRINTF("opcode=0x%04x\n", desc->opcode);
+		DPRINTF("datalen=0x%04x\n", desc->datalen);
+		DPRINTF("retval=0x%04x\n", desc->retval);
+		DPRINTF("cookie_high=0x%08x\n", desc->cookie_high);
+		DPRINTF("cookie_low=0x%08x\n", desc->cookie_low);
+		DPRINTF("perf_match_used=0x%04x\n", *(__le16 *)(&desc->params.raw[0]));
+		DPRINTF("perf_match_unal=0x%04x\n", *(__le16 *)(&desc->params.raw[2]));
+		DPRINTF("res=0x%08x\n", desc->params.external.param1);
+		DPRINTF("data_addr_hi=0x%08x\n", desc->params.external.addr_high);
+		DPRINTF("data_addr_lo=0x%08x\n", desc->params.external.addr_low);
+		*/
 	}
 
 	/* bump the tail */

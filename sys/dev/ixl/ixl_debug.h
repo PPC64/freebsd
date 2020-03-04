@@ -41,6 +41,7 @@
 	(mac_addr)[4], (mac_addr)[5]
 #define ON_OFF_STR(is_set) ((is_set) ? "On" : "Off")
 
+#define IXL_DEBUG
 #ifdef IXL_DEBUG
 
 #define _DBG_PRINTF(S, ...)		printf("%s: " S "\n", __func__, ##__VA_ARGS__)
@@ -67,6 +68,19 @@
 #define IOCTL_DBG_IF(...)		if (DEBUG_IOCTL) _IF_DBG_PRINTF(__VA_ARGS__)
 
 #define HW_DEBUGOUT(...)		if (DEBUG_HW) _DBG_PRINTF(__VA_ARGS__)
+
+/* DEBUG { */
+
+extern u32 ixl_adminq_dbg;
+extern u32 ixl_dbg_mask;
+extern u32 ixl_debug_mask;
+
+struct ixl_pf;
+void ixl_dbg_on(struct ixl_pf *pf);
+void ixl_dbg_off(struct ixl_pf *pf);
+
+/* DEBUG } */
+
 
 #else /* no IXL_DEBUG */
 #define DEBUG_INIT  0

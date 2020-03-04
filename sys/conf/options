@@ -1015,9 +1015,5 @@ AMDSBWD_DEBUG	opt_amdsbwd.h
 GCOV		opt_global.h
 LINDEBUGFS
 
-# options for HID support
-HID_DEBUG	opt_hid.h
-IICHID_DEBUG	opt_hid.h
-IICHID_SAMPLING	opt_hid.h
-HKBD_DFLT_KEYMAP	opt_hkbd.h
-HIDRAW_MAKE_UHID_ALIAS	opt_hid.h
+# iWARP client interface support in ixl
+IXL_IW		opt_ixl.h

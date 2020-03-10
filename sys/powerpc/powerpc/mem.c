@@ -155,21 +155,24 @@ kmem_direct_mapped:	off = v & PAGE_MASK;
 			 */
 
 			for (; va < eva; va += PAGE_SIZE)
-				if (pmap_extract(kernel_pmap, va) == 0)
-					return (EFAULT);
+				if (pmap_extract(kernel_pmap, va) == 0) {
+					error = EFAULT;
+					break;
+				}
+			if (error != 0)
+				break;
 
 			prot = (uio->uio_rw == UIO_READ)
 			    ? VM_PROT_READ : VM_PROT_WRITE;
 
 			va = uio->uio_offset;
-			if (hw_direct_map &&
-			    !kernacc((void *) va, iov->iov_len, prot)){
+			if (((va >= VM_MIN_KERNEL_ADDRESS) && (va <= virtual_end)) &&
+			    !kernacc((void *) va, iov->iov_len, prot)) {
 				error = EFAULT;
 				break;
 			}
 
 			error = uiomove((void *)va, iov->iov_len, uio);
-			continue;
 		}
 	}
 	/*

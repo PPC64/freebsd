@@ -154,11 +154,12 @@ kmem_direct_mapped:	off = v & PAGE_MASK;
 			 * so that we don't create any zero-fill pages.
 			 */
 
-			for (; va < eva; va += PAGE_SIZE)
+			for (; va < eva; va += PAGE_SIZE) {
 				if (pmap_extract(kernel_pmap, va) == 0) {
 					error = EFAULT;
 					break;
 				}
+			}
 			if (error != 0)
 				break;
 

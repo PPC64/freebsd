@@ -918,8 +918,11 @@ moea64_mid_bootstrap(mmu_t mmup, vm_offset_t kernelstart, vm_offset_t kernelend)
 	 */
 	TUNABLE_INT_FETCH("machdep.moea64_bpvo_pool_size", &moea64_bpvo_pool_size);
 	if (!moea64_bpvo_pool_size) {
-	  moea64_bpvo_pool_size = ((ptoa((uintmax_t)physmem) * sizeof(struct vm_page))
-	      / (PAGE_SIZE * PAGE_SIZE)) * BPVO_POOL_EXPANSION_FACTOR;
+	  if (!hw_direct_map)
+	    moea64_bpvo_pool_size = ((ptoa((uintmax_t)physmem) * sizeof(struct vm_page))
+	        / (PAGE_SIZE * PAGE_SIZE)) * BPVO_POOL_EXPANSION_FACTOR;
+	  else
+	    moea64_bpvo_pool_size = 327680;
 	}
 
 	moea64_bpvo_pool = (struct pvo_entry *)moea64_bootstrap_alloc(

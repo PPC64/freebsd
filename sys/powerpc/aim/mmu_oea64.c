@@ -188,7 +188,8 @@ static int	moea64_bpvo_pool_size = 0;
 SYSCTL_INT(_machdep, OID_AUTO, moea64_allocated_bpvo_entries, CTLFLAG_RD, 
     &moea64_bpvo_pool_index, 0, "");
 
-#define BPVO_POOL_EXPANSION_FACTOR 3
+#define	BPVO_POOL_SIZE	327680 /* Sensible historical default value */
+#define	BPVO_POOL_EXPANSION_FACTOR	3
 #define	VSID_NBPW	(sizeof(u_int32_t) * 8)
 #ifdef __powerpc64__
 #define	NVSIDS		(NPMAPS * 16)
@@ -917,12 +918,12 @@ moea64_mid_bootstrap(mmu_t mmup, vm_offset_t kernelstart, vm_offset_t kernelend)
 	 * Initialise the bootstrap pvo pool.
 	 */
 	TUNABLE_INT_FETCH("machdep.moea64_bpvo_pool_size", &moea64_bpvo_pool_size);
-	if (!moea64_bpvo_pool_size) {
-	  if (!hw_direct_map)
-	    moea64_bpvo_pool_size = ((ptoa((uintmax_t)physmem) * sizeof(struct vm_page))
-	        / (PAGE_SIZE * PAGE_SIZE)) * BPVO_POOL_EXPANSION_FACTOR;
-	  else
-	    moea64_bpvo_pool_size = 327680;
+	if (moea64_bpvo_pool_size == 0) {
+		if (!hw_direct_map)
+			moea64_bpvo_pool_size = ((ptoa((uintmax_t)physmem) * sizeof(struct vm_page)) /
+			    (PAGE_SIZE * PAGE_SIZE)) * BPVO_POOL_EXPANSION_FACTOR;
+		else
+			moea64_bpvo_pool_size = BPVO_POOL_SIZE;
 	}
 
 	moea64_bpvo_pool = (struct pvo_entry *)moea64_bootstrap_alloc(

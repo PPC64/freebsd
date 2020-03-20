@@ -926,6 +926,12 @@ moea64_mid_bootstrap(mmu_t mmup, vm_offset_t kernelstart, vm_offset_t kernelend)
 			moea64_bpvo_pool_size = BPVO_POOL_SIZE;
 	}
 
+	if (boothowto & RB_VERBOSE) {
+		printf("mmu_oea64: bpvo pool entries = %d, bpvo pool size = %ju MB\n",
+		    moea64_bpvo_pool_size,
+		    moea64_bpvo_pool_size*sizeof(struct pvo_entry) / 1048576);
+	}
+
 	moea64_bpvo_pool = (struct pvo_entry *)moea64_bootstrap_alloc(
 		moea64_bpvo_pool_size*sizeof(struct pvo_entry), PAGE_SIZE);
 	moea64_bpvo_pool_index = 0;

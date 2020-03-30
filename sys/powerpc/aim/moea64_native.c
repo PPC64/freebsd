@@ -117,6 +117,7 @@ __FBSDID("$FreeBSD$");
 
 #include <machine/cpu.h>
 #include <machine/hid.h>
+#include <machine/ifunc.h>
 #include <machine/md_var.h>
 #include <machine/mmuvar.h>
 
@@ -132,11 +133,65 @@ __FBSDID("$FreeBSD$");
 /* POWER9 only permits a 64k partition table size. */
 #define	PART_SIZE	0x10000
 
+/* Actual page sizes (to be used with tlbie, when L=0) */
+#define	AP_4K		0x00
+#define	AP_16M		0x80
+
+#define	LPTE_KERNEL_VSID_BIT	(KERNEL_VSID_BIT << \
+				(16 - (ADDR_API_SHFT64 - ADDR_PIDX_SHFT)))
+
 static bool moea64_crop_tlbie;
 static bool moea64_need_lock;
 
+#ifdef __powerpc64__
+
+/*
+ * The tlbie instruction has two forms: an old one used by PowerISA
+ * 2.03 and prior, and a newer one used by PowerISA 2.06 and later.
+ * We need to support both.
+ */
+
+static void
+__tlbie_old(uint64_t vpn, uint64_t oldptehi)
+{
+	if ((oldptehi & LPTE_BIG) != 0)
+		__asm __volatile("tlbie %0, 1" :: "r"(vpn) : "memory");
+	else
+		__asm __volatile("tlbie %0, 0" :: "r"(vpn) : "memory");
+	__asm __volatile("eieio; tlbsync; ptesync" ::: "memory");
+}
+
+static void
+__tlbie_new(uint64_t vpn, uint64_t oldptehi)
+{
+	uint64_t rb;
+
+	/*
+	 * If this page has LPTE_BIG set and is from userspace, then
+	 * it must be a superpage with 4KB base/16MB actual page size.
+	 */
+	rb = vpn;
+	if ((oldptehi & LPTE_BIG) != 0 &&
+	    (oldptehi & LPTE_KERNEL_VSID_BIT) == 0)
+		rb |= AP_16M;
+
+	__asm __volatile("li 0, 0 \n tlbie %0, 0" :: "r"(rb) : "r0", "memory");
+	__asm __volatile("eieio; tlbsync; ptesync" ::: "memory");
+}
+
+DEFINE_IFUNC(, void, __tlbie, (uint64_t vpn, uint64_t oldptehi))
+{
+	if (cpu_features & PPC_FEATURE_ARCH_2_06)
+		return (__tlbie_new);
+	else
+		return (__tlbie_old);
+}
+
+#endif
+
 static __inline void
-TLBIE(uint64_t vpn) {
+TLBIE(uint64_t vpn, uint64_t oldptehi)
+{
 #ifndef __powerpc64__
 	register_t vpn_hi, vpn_lo;
 	register_t msr;
@@ -158,18 +213,7 @@ TLBIE(uint64_t vpn) {
 	}
 
 #ifdef __powerpc64__
-	/*
-	 * Explicitly clobber r0.  The tlbie instruction has two forms: an old
-	 * one used by PowerISA 2.03 and prior, and a newer one used by PowerISA
-	 * 2.06 (maybe 2.05?) and later.  We need to support both, and it just
-	 * so happens that since we use 4k pages we can simply zero out r0, and
-	 * clobber it, and the assembler will interpret the single-operand form
-	 * of tlbie as having RB set, and everything else as 0.  The RS operand
-	 * in the newer form is in the same position as the L(page size) bit of
-	 * the old form, so a slong as RS is 0, we're good on both sides.
-	 */
-	__asm __volatile("li 0, 0 \n tlbie %0" :: "r"(vpn) : "r0", "memory");
-	__asm __volatile("eieio; tlbsync; ptesync" ::: "memory");
+	__tlbie(vpn, oldptehi);
 #else
 	vpn_hi = (uint32_t)(vpn >> 32);
 	vpn_lo = (uint32_t)vpn;
@@ -321,7 +365,7 @@ moea64_pte_clear_native(struct pvo_entry *pvo, uint64_t ptebit)
 		rw_runlock(&moea64_eviction_lock);
 
 		critical_enter();
-		TLBIE(pvo->pvo_vpn);
+		TLBIE(pvo->pvo_vpn, properpt.pte_hi);
 		critical_exit();
 	} else {
 		rw_runlock(&moea64_eviction_lock);
@@ -356,7 +400,7 @@ moea64_pte_unset_native(struct pvo_entry *pvo)
 	critical_enter();
 	pt->pte_hi = be64toh((pt->pte_hi & ~LPTE_VALID) | LPTE_LOCKED);
 	PTESYNC();
-	TLBIE(pvo->pvo_vpn);
+	TLBIE(pvo->pvo_vpn, pt->pte_hi);
 	ptelo = be64toh(pt->pte_lo);
 	*((volatile int32_t *)(&pt->pte_hi) + 1) = 0; /* Release lock */
 	critical_exit();
@@ -394,7 +438,7 @@ moea64_pte_replace_inval_native(struct pvo_entry *pvo,
 	critical_enter();
 	pt->pte_hi = be64toh((pt->pte_hi & ~LPTE_VALID) | LPTE_LOCKED);
 	PTESYNC();
-	TLBIE(pvo->pvo_vpn);
+	TLBIE(pvo->pvo_vpn, pt->pte_hi);
 	ptelo = be64toh(pt->pte_lo);
 	EIEIO();
 	pt->pte_lo = htobe64(properpt.pte_lo);
@@ -702,7 +746,7 @@ moea64_insert_to_pteg_native(struct lpte *pvo_pt, uintptr_t slotbase,
 		va |= (oldptehi & LPTE_AVPN_MASK) <<
 		    (ADDR_API_SHFT64 - ADDR_PIDX_SHFT);
 		PTESYNC();
-		TLBIE(va);
+		TLBIE(va, oldptehi);
 		STAT_MOEA64(moea64_pte_valid--);
 		STAT_MOEA64(moea64_pte_overflow++);
 	}

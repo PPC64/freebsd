@@ -120,8 +120,13 @@ typedef	struct lpte lpte_t;
 #define LPTE_VALID		0x0000000000000001ULL
 
 /* Low quadword: */
+#define	LP_4K_16M	0x38	/* 4KB base, 16MB actual page size */
+
 #define EXTEND_PTE(x)	UINT64_C(x)	/* make constants 64-bit */
 #define	LPTE_RPGN	0xfffffffffffff000ULL
+#define	LPTE_LP_MASK	0x00000000000ff000ULL
+#define	LPTE_LP_SHIFT	12
+#define	LPTE_LP_4K_16M	((unsigned long long)(LP_4K_16M) << LPTE_LP_SHIFT)
 #define	LPTE_REF	EXTEND_PTE( PTE_REF )
 #define	LPTE_CHG	EXTEND_PTE( PTE_CHG )
 #define	LPTE_WIMG	EXTEND_PTE( PTE_WIMG )

@@ -120,6 +120,15 @@
 #define L3_PAGE_SIZE (1UL<<L3_PAGE_SIZE_SHIFT)
 #define L3_PAGE_MASK (L3_PAGE_SIZE-1)
 
+/*
+ * On PowerPC64, make PDRSHIFT cover a 16MB superpage (HPT).
+ * This allows a single PV lock to protect all pages of a superpage.
+ * This is not needed with Radix MMU, but should do no harm either.
+ */
+#ifdef __powerpc64__
+#define	PDRSHIFT	24
+#endif
+
 #define	MAXPAGESIZES	3	/* maximum number of supported page sizes */
 
 #define	RELOCATABLE_KERNEL	1		/* kernel may relocate during startup */

@@ -135,6 +135,7 @@ mphyp_bootstrap(vm_offset_t kernelstart, vm_offset_t kernelend)
 	uint64_t vsid;
 	phandle_t dev, node, root;
 	int idx, len, res;
+	bool has_lp;
 
 	rm_init(&mphyp_eviction_lock, "pte eviction");
 
@@ -199,6 +200,7 @@ mphyp_bootstrap(vm_offset_t kernelstart, vm_offset_t kernelend)
 		    sizeof(arr));
 		len /= 4;
 		idx = 0;
+		has_lp = false;
 		while (len > 0) {
 			shift = arr[idx];
 			slb_encoding = arr[idx + 1];
@@ -220,18 +222,22 @@ mphyp_bootstrap(vm_offset_t kernelstart, vm_offset_t kernelend)
 				    lp_encoding);
 
 				if (slb_encoding == SLBV_L && lp_encoding == 0)
-					break;
+					has_lp = true;
+
+				if (slb_encoding == SLB_PGSZ_4K_4K &&
+				    lp_encoding == LP_4K_16M)
+					moea64_has_lp_4k_16m = true;
 
 				idx += 2;
 				len -= 2;
 				nptlp--;
 			}
 			dprintf("\n");
-			if (nptlp && slb_encoding == SLBV_L && lp_encoding == 0)
+			if (has_lp && moea64_has_lp_4k_16m)
 				break;
 		}
 
-		if (len > 0) {
+		if (has_lp) {
 			moea64_large_page_shift = shift;
 			moea64_large_page_size = 1ULL << lp_size;
 			moea64_large_page_mask = moea64_large_page_size - 1;

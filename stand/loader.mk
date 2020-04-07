@@ -123,6 +123,9 @@ CFLAGS+=	-DLOADER_NFS_SUPPORT
 .if ${LOADER_TFTP_SUPPORT:Uno} == "yes"
 CFLAGS+=	-DLOADER_TFTP_SUPPORT
 .endif
+.if ${LOADER_TFTP_DEFAULT:Uno} == "yes"
+CFLAGS+=	-DLOADER_TFTP_DEFAULT
+.endif
 
 # Partition support
 .if ${LOADER_GPT_SUPPORT:Uyes} == "yes"

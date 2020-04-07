@@ -380,7 +380,7 @@ net_print(int verbose)
  *
  * If an ip is set it returns it in network byte order.
  * The default scheme defined in the global netproto, if not set it defaults to
- * NFS.
+ * NFS, unless LOADER_TFTP_DEFAULT is defined.
  * It leaves just the pathname in the global rootpath.
  */
 uint32_t
@@ -404,7 +404,11 @@ net_parse_rootpath(void)
 	ptr = rootpath;
 	/* Fallback for compatibility mode */
 	if (netproto == NET_NONE) {
+#ifdef LOADER_TFTP_DEFAULT
+		netproto = NET_TFTP;
+#else
 		netproto = NET_NFS;
+#endif
 		(void)strsep(&ptr, ":");
 		if (ptr != NULL) {
 			addr = inet_addr(rootpath);

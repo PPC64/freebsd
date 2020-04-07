@@ -94,6 +94,12 @@ CFLAGS+=	-I${SASRC}/geli
 CFLAGS+= -DLOADER_DISK_SUPPORT
 .endif
 
+.if defined(LOADER_ROOTPATH)
+CFLAGS+= -DLOADER_ROOTPATH=\"${LOADER_ROOTPATH}\"
+.else
+CFLAGS+= -DLOADER_ROOTPATH=\"/\"
+.endif
+
 # Machine specific flags for all builds here
 
 # All PowerPC builds are 32 bit. We have no 64-bit loaders on powerpc

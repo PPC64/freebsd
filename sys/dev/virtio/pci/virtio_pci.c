@@ -191,11 +191,17 @@ static void	vtpci_config_intr(void *);
  * and from BE to LE when writing.
  * If we are in a LE machine, there will be no swaps.
  */
+#if defined(__mips__)
+#define vtpci_read_header_2(sc, o)	vtpci_read_config_2(sc, o)
+#define vtpci_read_header_4(sc, o)	vtpci_read_config_4(sc, o)
+#define vtpci_write_header_2(sc, o, v)  vtpci_write_config_2(sc, o, v)
+#define vtpci_write_header_4(sc, o, v)  vtpci_write_config_4(sc, o, v)
+#else
 #define vtpci_read_header_2(sc, o)	le16toh(vtpci_read_config_2(sc, o))
 #define vtpci_read_header_4(sc, o)	le32toh(vtpci_read_config_4(sc, o))
 #define vtpci_write_header_2(sc, o, v)  vtpci_write_config_2(sc, o, (htole16(v)))
 #define vtpci_write_header_4(sc, o, v)  vtpci_write_config_4(sc, o, (htole32(v)))
-
+#endif
 /* Tunables. */
 static int vtpci_disable_msix = 0;
 TUNABLE_INT("hw.virtio.pci.disable_msix", &vtpci_disable_msix);
@@ -297,7 +303,7 @@ vtpci_attach(device_t dev)
  * other parts of this file via functions
  * 'vtpci_[read|write]_header_[2|4]'
  */
-#if _BYTE_ORDER == _BIG_ENDIAN
+#if _BYTE_ORDER == _BIG_ENDIAN && !defined(__mips__)
 	rman_set_bustag(sc->vtpci_res, &bs_be_tag);
 #endif
 

@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2018 Ruslan Bukin <br@bsdpad.com>
+ * Copyright (c) 2018-2020 Ruslan Bukin <br@bsdpad.com>
  * All rights reserved.
  *
  * This software was developed by SRI International and the University of
@@ -42,9 +42,6 @@ __FBSDID("$FreeBSD$");
 #include <arm64/coresight/coresight.h>
 #include <arm64/coresight/coresight_tmc.h>
 
-#include <dev/ofw/ofw_bus.h>
-#include <dev/ofw/ofw_bus_subr.h>
-
 #include "coresight_if.h"
 
 #define	TMC_DEBUG
@@ -55,25 +52,6 @@ __FBSDID("$FreeBSD$");
 #else
 #define	dprintf(fmt, ...)
 #endif
-
-static struct ofw_compat_data compat_data[] = {
-	{ "arm,coresight-tmc",			1 },
-	{ NULL,					0 }
-};
-
-struct tmc_softc {
-	struct resource			*res;
-	device_t			dev;
-	uint64_t			cycle;
-	struct coresight_platform_data	*pdata;
-	uint32_t			dev_type;
-#define	CORESIGHT_UNKNOWN		0
-#define	CORESIGHT_ETR			1
-#define	CORESIGHT_ETF			2
-	uint32_t			nev;
-	struct coresight_event		*event;
-	boolean_t			etf_configured;
-};
 
 static struct resource_spec tmc_spec[] = {
 	{ SYS_RES_MEMORY,	0,	RF_ACTIVE },
@@ -334,29 +312,13 @@ tmc_read(device_t dev, struct endpoint *endp,
 	return (0);
 }
 
-static int
-tmc_probe(device_t dev)
-{
-
-	if (!ofw_bus_status_okay(dev))
-		return (ENXIO);
-
-	if (ofw_bus_search_compatible(dev, compat_data)->ocd_data == 0)
-		return (ENXIO);
-
-	device_set_desc(dev, "Coresight Trace Memory Controller (TMC)");
-
-	return (BUS_PROBE_DEFAULT);
-}
-
-static int
+int
 tmc_attach(device_t dev)
 {
 	struct coresight_desc desc;
 	struct tmc_softc *sc;
 
 	sc = device_get_softc(dev);
-
 	sc->dev = dev;
 
 	if (bus_alloc_resources(dev, tmc_spec, &sc->res) != 0) {
@@ -364,7 +326,6 @@ tmc_attach(device_t dev)
 		return (ENXIO);
 	}
 
-	sc->pdata = coresight_get_platform_data(dev);
 	desc.pdata = sc->pdata;
 	desc.dev = dev;
 	desc.dev_type = CORESIGHT_TMC;
@@ -375,7 +336,6 @@ tmc_attach(device_t dev)
 
 static device_method_t tmc_methods[] = {
 	/* Device interface */
-	DEVMETHOD(device_probe,		tmc_probe),
 	DEVMETHOD(device_attach,	tmc_attach),
 
 	/* Coresight interface */
@@ -386,13 +346,4 @@ static device_method_t tmc_methods[] = {
 	DEVMETHOD_END
 };
 
-static driver_t tmc_driver = {
-	"tmc",
-	tmc_methods,
-	sizeof(struct tmc_softc),
-};
-
-static devclass_t tmc_devclass;
-
-DRIVER_MODULE(tmc, simplebus, tmc_driver, tmc_devclass, 0, 0);
-MODULE_VERSION(tmc, 1);
+DEFINE_CLASS_0(tmc, tmc_driver, tmc_methods, sizeof(struct tmc_softc));

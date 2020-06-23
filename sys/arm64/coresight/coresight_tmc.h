@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2018 Ruslan Bukin <br@bsdpad.com>
+ * Copyright (c) 2018-2020 Ruslan Bukin <br@bsdpad.com>
  * All rights reserved.
  *
  * This software was developed by SRI International and the University of
@@ -115,5 +115,23 @@
 #define	TMC_COMPID1	0xFF4 /* Component ID1 Register */
 #define	TMC_COMPID2	0xFF8 /* Component ID2 Register */
 #define	TMC_COMPID3	0xFFC /* Component ID3 Register */
+
+DECLARE_CLASS(tmc_driver);
+
+struct tmc_softc {
+	struct resource			*res;
+	device_t			dev;
+	uint64_t			cycle;
+	struct coresight_platform_data	*pdata;
+	uint32_t			dev_type;
+#define	CORESIGHT_UNKNOWN		0
+#define	CORESIGHT_ETR			1
+#define	CORESIGHT_ETF			2
+	uint32_t			nev;
+	struct coresight_event		*event;
+	boolean_t			etf_configured;
+};
+
+int tmc_attach(device_t dev);
 
 #endif /* !_ARM64_CORESIGHT_CORESIGHT_TMC_H_ */

@@ -14,6 +14,7 @@ cddl/compat/opensolaris/kern/opensolaris_atomic.c			optional zfs powerpc | dtrac
 cddl/dev/dtrace/powerpc/dtrace_asm.S		optional dtrace compile-with "${DTRACE_S}"
 cddl/dev/dtrace/powerpc/dtrace_subr.c		optional dtrace compile-with "${DTRACE_C}"
 cddl/dev/fbt/powerpc/fbt_isa.c			optional dtrace_fbt | dtraceall compile-with "${FBT_C}"
+compat/linprocfs/linprocfs.c	optional	linprocfs
 crypto/des/des_enc.c		optional	netsmb
 dev/aacraid/aacraid_endian.c	optional	aacraid
 dev/adb/adb_bus.c		optional	adb
@@ -311,3 +312,11 @@ powerpc/psim/iobus.c 		optional	psim
 powerpc/psim/ata_iobus.c	optional	ata psim
 powerpc/psim/openpic_iobus.c	optional	psim
 powerpc/psim/uart_iobus.c	optional	uart psim
+
+compat/linux/linux_emul.c	optional	compat_linux32
+compat/linux/linux_errno.c	optional	compat_linux32
+compat/linux/linux_mib.c	optional	compat_linux32
+compat/linux/linux_mmap.c	optional	compat_linux32
+compat/linux/linux_util.c	optional	compat_linux32
+compat/linux/linux_common.c	optional	compat_linux32
+compat/linux/linux.c		optional	compat_linux32

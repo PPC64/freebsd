@@ -105,6 +105,7 @@ __DEFAULT_YES_OPTIONS = \
     FTP \
     GAMES \
     GDB \
+    GH_BC \
     GNU_DIFF \
     GNU_GREP \
     GOOGLETEST \
@@ -202,6 +203,7 @@ __DEFAULT_NO_OPTIONS = \
     BHYVE_SNAPSHOT \
     BSD_GREP \
     CLANG_EXTRAS \
+    CLANG_FORMAT \
     DTRACE_TESTS \
     EXPERIMENTAL \
     GNU_GREP_COMPAT \
@@ -482,6 +484,7 @@ MK_LLDB:=	no
 
 .if ${MK_CLANG} == "no"
 MK_CLANG_EXTRAS:= no
+MK_CLANG_FORMAT:= no
 MK_CLANG_FULL:= no
 MK_LLVM_COV:= no
 .endif

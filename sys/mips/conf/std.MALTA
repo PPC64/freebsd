@@ -55,11 +55,3 @@ device		miibus
 device		bpf
 device		md
 device		uart
-
-device		virtio
-device		virtio_pci
-device		vtnet
-device		virtio_blk
-device		virtio_mmio
-device		virtio_random
-device		virtio_console

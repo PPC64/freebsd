@@ -198,8 +198,8 @@ static void	vtpci_config_intr(void *);
  * and from BE to LE when writing.
  * If we are in a LE machine, there will be no swaps.
  */
-#define vtpci_read_header_2(sc, o)	bus_read_2((sc)->vtpci_res, (o))
-#define vtpci_read_header_4(sc, o)	bus_read_4((sc)->vtpci_res, (o))
+#define vtpci_read_header_2(sc, o)	(bus_read_2((sc)->vtpci_res, (o)))
+#define vtpci_read_header_4(sc, o)	(bus_read_4((sc)->vtpci_res, (o)))
 #define vtpci_write_header_2(sc, o, v)  bus_write_2((sc)->vtpci_res, (o), (v))
 #define vtpci_write_header_4(sc, o, v)  bus_write_4((sc)->vtpci_res, (o), (v))
 

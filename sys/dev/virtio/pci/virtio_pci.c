@@ -180,7 +180,7 @@ static void	vtpci_config_intr(void *);
  */
 #define vtpci_read_config_1(sc, o)	bus_read_1((sc)->vtpci_res, (o))
 #define vtpci_write_config_1(sc, o, v)	bus_write_1((sc)->vtpci_res, (o), (v))
-#if _BYTE_ORDER == _BIG_ENDIAN 
+#if _BYTE_ORDER == _BIG_ENDIAN
 #define vtpci_read_config_2(sc, o)	le16toh(bus_read_2((sc)->vtpci_res, (o)))
 #define vtpci_read_config_4(sc, o)	le32toh(bus_read_4((sc)->vtpci_res, (o)))
 #define vtpci_write_config_2(sc, o, v)	bus_write_2((sc)->vtpci_res, (o), (htole16(v)))

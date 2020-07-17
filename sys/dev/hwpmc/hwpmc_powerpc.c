@@ -177,6 +177,12 @@ pmc_md_initialize()
 	case IBM970MP:
 		error = pmc_ppc970_initialize(pmc_mdep);
 		break;
+	case IBMPOWER8E:
+	case IBMPOWER8NVL:
+	case IBMPOWER8:
+	case IBMPOWER9:
+		error = pmc_ppcpnv_initialize(pmc_mdep);
+		break;
 	case FSL_E500v1:
 	case FSL_E500v2:
 	case FSL_E500mc:

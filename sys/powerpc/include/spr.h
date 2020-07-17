@@ -461,6 +461,41 @@
 #define	SPR_970PMC7		0x319	/* ... PMC 7 */
 #define	SPR_970PMC8		0x31a	/* ... PMC 8 */
 
+#define	SPR_PNVMMCR0		0x31b
+#define	SPR_PNVMMCR0_PMAE	0x04000000
+#define	SPR_PNVMMCR0_PMAO	0x00000080
+#define	SPR_PNVMMCR0_FCPC	0x00001000
+#define	SPR_PNVMMCR0_FC56	0x00000010
+
+#define	SPR_PNVMMCR1		0x31e
+#define	SPR_PNVMMCR1_PMCSEL_ALL	0xffffffff
+#define	SPR_PNVMMCR1_PMCNSEL_MASK(n)	(0xffUL << ((3-(n))*8))
+#define	SPR_PNVMMCR1_PMCNSEL(n, v)	((unsigned long)(v) << ((3-(n))*8))
+
+#define	SPR_PNVMMCR2		0x311
+#define	SPR_PNVMMCR2_CNBIT(n, bit)	((bit) << (((5 - (n)) * 9) + 10))
+#define	SPR_PNVMMCR2_FCNS(n)	SPR_PNVMMCR2_CNBIT(n, 0x100UL)
+#define	SPR_PNVMMCR2_FCNP0(n)	SPR_PNVMMCR2_CNBIT(n, 0x080UL)
+#define	SPR_PNVMMCR2_FCNP1(n)	SPR_PNVMMCR2_CNBIT(n, 0x040UL)
+#define	SPR_PNVMMCR2_FCNM1(n)	SPR_PNVMMCR2_CNBIT(n, 0x020UL)
+#define	SPR_PNVMMCR2_FCNM0(n)	SPR_PNVMMCR2_CNBIT(n, 0x010UL)
+#define	SPR_PNVMMCR2_FCNWAIT(n)	SPR_PNVMMCR2_CNBIT(n, 0x008UL)
+#define	SPR_PNVMMCR2_FCNH(n)	SPR_PNVMMCR2_CNBIT(n, 0x004UL)
+/* Freeze Counter N in Hypervisor/Supervisor/Problem states */
+#define	SPR_PNVMMCR2_FCNHSP(n) \
+	(SPR_PNVMMCR2_FCNS(n) | SPR_PNVMMCR2_FCNP0(n) | \
+	    SPR_PNVMMCR2_FCNP1(n) | SPR_PNVMMCR2_FCNH(n))
+
+#define	SPR_PNVMMCRA		0x312
+#define	SPR_PNVPMC1		0x313
+#define	SPR_PNVPMC2		0x314
+#define	SPR_PNVPMC3		0x315
+#define	SPR_PNVPMC4		0x316
+#define	SPR_PNVPMC5		0x317
+#define	SPR_PNVPMC6		0x318
+
+#define	PMCPNVN_NONE		0 /* Count nothing */
+
 #define	SPR_M_TWB		0x31c	/* ..8 MMU tablewalk base */
 #define	  M_TWB_L1TB		0xfffff000 /* level-1 translation base */
 #define	  M_TWB_L1INDX		0x00000ffc /* level-1 index */

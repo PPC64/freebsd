@@ -92,6 +92,7 @@ arm/broadcom/bcm2835/bcm2835_clkman.c		optional soc_brcm_bcm2837 fdt | soc_brcm_
 arm/broadcom/bcm2835/bcm2835_cpufreq.c		optional soc_brcm_bcm2837 fdt | soc_brcm_bcm2838 fdt
 arm/broadcom/bcm2835/bcm2835_dma.c		optional soc_brcm_bcm2837 fdt | soc_brcm_bcm2838 fdt
 arm/broadcom/bcm2835/bcm2835_fbd.c		optional vt soc_brcm_bcm2837 fdt | vt soc_brcm_bcm2838 fdt
+arm/broadcom/bcm2835/bcm2835_firmware.c		optional soc_brcm_bcm2837 fdt | soc_brcm_bcm2838 fdt
 arm/broadcom/bcm2835/bcm2835_ft5406.c		optional evdev bcm2835_ft5406 fdt
 arm/broadcom/bcm2835/bcm2835_gpio.c		optional gpio soc_brcm_bcm2837 fdt | gpio soc_brcm_bcm2838 fdt
 arm/broadcom/bcm2835/bcm2835_intr.c		optional soc_brcm_bcm2837 fdt | soc_brcm_bcm2838 fdt
@@ -323,6 +324,7 @@ dev/pci/pci_dw_if.m		optional	pci fdt
 dev/psci/psci.c			standard
 dev/psci/smccc_arm64.S		standard
 dev/psci/smccc.c		standard
+dev/safexcel/safexcel.c		optional	safexcel fdt
 dev/sdhci/sdhci_xenon.c		optional	sdhci_xenon sdhci fdt
 dev/uart/uart_cpu_arm64.c	optional	uart
 dev/uart/uart_dev_mu.c		optional	uart uart_mu

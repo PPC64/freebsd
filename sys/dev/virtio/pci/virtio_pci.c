@@ -180,26 +180,21 @@ static void	vtpci_config_intr(void *);
  */
 #define vtpci_read_config_1(sc, o)	bus_read_1((sc)->vtpci_res, (o))
 #define vtpci_write_config_1(sc, o, v)	bus_write_1((sc)->vtpci_res, (o), (v))
-#if _BYTE_ORDER == _BIG_ENDIAN
-#define vtpci_read_config_2(sc, o)	le16toh(bus_read_2((sc)->vtpci_res, (o)))
-#define vtpci_read_config_4(sc, o)	le32toh(bus_read_4((sc)->vtpci_res, (o)))
-#define vtpci_write_config_2(sc, o, v)	bus_write_2((sc)->vtpci_res, (o), (htole16(v)))
-#define vtpci_write_config_4(sc, o, v)	bus_write_4((sc)->vtpci_res, (o), (htole32(v)))
-#else
-#define vtpci_read_config_2(sc, o)	bus_read_2((sc)->vtpci_res, (o))
-#define vtpci_read_config_4(sc, o)	bus_read_4((sc)->vtpci_res, (o))
-#define vtpci_write_config_2(sc, o, v)	bus_write_2((sc)->vtpci_res, (o), (v))
-#define vtpci_write_config_4(sc, o, v)	bus_write_4((sc)->vtpci_res, (o), (v))
-#endif
 
 /*
- * Legacy VirtIO header is always PCI endianness (little), so if we
- * are in a BE machine we need to swap bytes from LE to BE when reading
- * and from BE to LE when writing.
- * If we are in a LE machine, there will be no swaps.
+ * Virtio-pci specifies that PCI Configuration area is guest endian. However,
+ * since PCI devices are inherently little-endian, on BE systems bus layer is
+ * transparently converting it to BE. For virtio-legacy, this conversion is
+ * undesired, an extra byte swap is required to fix it.
  */
-#define vtpci_read_header_2(sc, o)	(bus_read_2((sc)->vtpci_res, (o)))
-#define vtpci_read_header_4(sc, o)	(bus_read_4((sc)->vtpci_res, (o)))
+#define vtpci_read_config_2(sc, o)      le16toh(bus_read_2((sc)->vtpci_res, (o)))
+#define vtpci_read_config_4(sc, o)      le32toh(bus_read_4((sc)->vtpci_res, (o)))
+#define vtpci_write_config_2(sc, o, v)  bus_write_2((sc)->vtpci_res, (o), (htole16(v)))
+#define vtpci_write_config_4(sc, o, v)  bus_write_4((sc)->vtpci_res, (o), (htole32(v)))
+
+/* PCI Header LE. On BE systems bus layer is taking care of byte swapping */
+#define vtpci_read_header_2(sc, o)      (bus_read_2((sc)->vtpci_res, (o)))
+#define vtpci_read_header_4(sc, o)      (bus_read_4((sc)->vtpci_res, (o)))
 #define vtpci_write_header_2(sc, o, v)  bus_write_2((sc)->vtpci_res, (o), (v))
 #define vtpci_write_header_4(sc, o, v)  bus_write_4((sc)->vtpci_res, (o), (v))
 

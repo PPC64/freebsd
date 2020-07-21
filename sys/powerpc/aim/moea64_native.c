@@ -117,7 +117,6 @@ __FBSDID("$FreeBSD$");
 
 #include <machine/cpu.h>
 #include <machine/hid.h>
-#include <machine/ifunc.h>
 #include <machine/md_var.h>
 #include <machine/mmuvar.h>
 
@@ -143,52 +142,11 @@ __FBSDID("$FreeBSD$");
 static bool moea64_crop_tlbie;
 static bool moea64_need_lock;
 
-#ifdef __powerpc64__
-
 /*
  * The tlbie instruction has two forms: an old one used by PowerISA
  * 2.03 and prior, and a newer one used by PowerISA 2.06 and later.
  * We need to support both.
  */
-
-static void
-__tlbie_old(uint64_t vpn, uint64_t oldptehi)
-{
-	if ((oldptehi & LPTE_BIG) != 0)
-		__asm __volatile("tlbie %0, 1" :: "r"(vpn) : "memory");
-	else
-		__asm __volatile("tlbie %0, 0" :: "r"(vpn) : "memory");
-	__asm __volatile("eieio; tlbsync; ptesync" ::: "memory");
-}
-
-static void
-__tlbie_new(uint64_t vpn, uint64_t oldptehi)
-{
-	uint64_t rb;
-
-	/*
-	 * If this page has LPTE_BIG set and is from userspace, then
-	 * it must be a superpage with 4KB base/16MB actual page size.
-	 */
-	rb = vpn;
-	if ((oldptehi & LPTE_BIG) != 0 &&
-	    (oldptehi & LPTE_KERNEL_VSID_BIT) == 0)
-		rb |= AP_16M;
-
-	__asm __volatile("li 0, 0 \n tlbie %0, 0" :: "r"(rb) : "r0", "memory");
-	__asm __volatile("eieio; tlbsync; ptesync" ::: "memory");
-}
-
-DEFINE_IFUNC(, void, __tlbie, (uint64_t vpn, uint64_t oldptehi))
-{
-	if (cpu_features & PPC_FEATURE_ARCH_2_06)
-		return (__tlbie_new);
-	else
-		return (__tlbie_old);
-}
-
-#endif
-
 static __inline void
 TLBIE(uint64_t vpn, uint64_t oldptehi)
 {
@@ -208,12 +166,33 @@ TLBIE(uint64_t vpn, uint64_t oldptehi)
 		while (!atomic_cmpset_int(&tlbie_lock, 0, 1));
 		isync(); /* Flush instruction queue once lock acquired */
 
-		if (moea64_crop_tlbie)
+		if (moea64_crop_tlbie) {
 			vpn &= ~(0xffffULL << 48);
+#ifdef __powerpc64__
+			if ((oldptehi & LPTE_BIG) != 0)
+				__asm __volatile("tlbie %0, 1" :: "r"(vpn) :
+				    "memory");
+			else
+				__asm __volatile("tlbie %0, 0" :: "r"(vpn) :
+				    "memory");
+			__asm __volatile("eieio; tlbsync; ptesync" :::
+			    "memory");
+			goto done;
+#endif
+		}
 	}
 
 #ifdef __powerpc64__
-	__tlbie(vpn, oldptehi);
+	/*
+	 * If this page has LPTE_BIG set and is from userspace, then
+	 * it must be a superpage with 4KB base/16MB actual page size.
+	 */
+	if ((oldptehi & LPTE_BIG) != 0 &&
+	    (oldptehi & LPTE_KERNEL_VSID_BIT) == 0)
+		vpn |= AP_16M;
+
+	__asm __volatile("li 0, 0 \n tlbie %0, 0" :: "r"(vpn) : "r0", "memory");
+	__asm __volatile("eieio; tlbsync; ptesync" ::: "memory");
 #else
 	vpn_hi = (uint32_t)(vpn >> 32);
 	vpn_lo = (uint32_t)vpn;
@@ -238,6 +217,7 @@ TLBIE(uint64_t vpn, uint64_t oldptehi)
 	intr_restore(intr);
 #endif
 
+done:
 	/* No barriers or special ops -- taken care of by ptesync above */
 	if (need_lock)
 		tlbie_lock = 0;

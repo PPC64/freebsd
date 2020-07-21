@@ -185,14 +185,6 @@ struct pmap_physseg {
 #define	VM_NFREELIST		1
 #define	VM_FREELIST_DEFAULT	0
 
-/*
- * By default, enable superpages for PPC64, except for BOOKE (that uses
- * a different MMU).
- */
-#if defined(__powerpc64__) && !defined(BOOKE)
-#define	PPC_SUPERPAGES
-#endif
-
 #ifdef __powerpc64__
 /* The largest allocation size is 16MB. */
 #define	VM_NFREEORDER		13

@@ -1048,9 +1048,11 @@ mprsas_action(struct cam_sim *sim, union ccb *ccb)
 		break;
 	}
 	case XPT_CALC_GEOMETRY:
+	{
 		cam_calc_geometry(&ccb->ccg, /*extended*/1);
 		mprsas_set_ccbstatus(ccb, CAM_REQ_CMP);
 		break;
+	}
 	case XPT_RESET_DEV:
 		mpr_dprint(sassc->sc, MPR_XINFO, "mprsas_action "
 		    "XPT_RESET_DEV\n");
@@ -2047,7 +2049,7 @@ mprsas_action_scsiio(struct mprsas_softc *sassc, union ccb *ccb)
 		}
 
 		if ((lun != NULL) && (lun->eedp_formatted)) {
-			req->EEDPBlockSize = htole16(lun->eedp_block_size);
+			req->EEDPBlockSize = htole32(lun->eedp_block_size);
 			eedp_flags |= (MPI2_SCSIIO_EEDPFLAGS_INC_PRI_REFTAG |
 			    MPI2_SCSIIO_EEDPFLAGS_CHECK_REFTAG |
 			    MPI2_SCSIIO_EEDPFLAGS_CHECK_GUARD);
@@ -2413,19 +2415,20 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 	target_id_t target_id;
 
 	MPR_FUNCTRACE(sc);
-	mpr_dprint(sc, MPR_TRACE,
-	    "cm %p SMID %u ccb %p reply %p outstanding %u\n", cm,
-	    cm->cm_desc.Default.SMID, cm->cm_ccb, cm->cm_reply,
-	    cm->cm_targ->outstanding);
 
 	callout_stop(&cm->cm_callout);
 	mtx_assert(&sc->mpr_mtx, MA_OWNED);
-
 	sassc = sc->sassc;
 	ccb = cm->cm_complete_data;
 	csio = &ccb->csio;
 	target_id = csio->ccb_h.target_id;
 	rep = (MPI2_SCSI_IO_REPLY *)cm->cm_reply;
+	mpr_dprint(sc, MPR_TRACE,
+	    "cm %p SMID %u ccb %p reply %p outstanding %u csio->scsi_status 0x%x,
+	    csio->dxfer_len 0x%x, csio->msg_le 0x%xn\n", cm,
+	    cm->cm_desc.Default.SMID, cm->cm_ccb, cm->cm_reply,
+	    cm->cm_targ->outstanding, csio->scsi_status,
+	    csio->dxfer_len, csio->msg_len);
 	/*
 	 * XXX KDM if the chain allocation fails, does it matter if we do
 	 * the sync and unload here?  It is simpler to do it in every case,
@@ -2559,6 +2562,7 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 		}
 		mpr_free_command(sc, cm);
 		xpt_done(ccb);
+
 		return;
 	}
 
@@ -2809,7 +2813,6 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 		mpr_dprint(sc, MPR_XINFO, "Command completed, unfreezing SIM "
 		    "queue\n");
 	}
-
 	if (mprsas_get_ccbstatus(ccb) != CAM_REQ_CMP) {
 		ccb->ccb_h.status |= CAM_DEV_QFRZN;
 		xpt_freeze_devq(ccb->ccb_h.path, /*count*/ 1);
@@ -3498,7 +3501,7 @@ mprsas_portenable_complete(struct mpr_softc *sc, struct mpr_command *cm)
 	reply = (MPI2_PORT_ENABLE_REPLY *)cm->cm_reply;
 	if (reply == NULL)
 		mpr_dprint(sc, MPR_FAULT, "Portenable NULL reply\n");
-	else if (le16toh(reply->IOCStatus & MPI2_IOCSTATUS_MASK) !=
+	else if ((le16toh(reply->IOCStatus) & MPI2_IOCSTATUS_MASK) !=
 	    MPI2_IOCSTATUS_SUCCESS)
 		mpr_dprint(sc, MPR_FAULT, "Portenable failed\n");
 

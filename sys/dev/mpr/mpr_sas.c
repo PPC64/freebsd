@@ -2562,7 +2562,6 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 		}
 		mpr_free_command(sc, cm);
 		xpt_done(ccb);
-
 		return;
 	}
 

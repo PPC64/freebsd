@@ -1027,7 +1027,6 @@ mpr_request_sync(struct mpr_softc *sc, void *req, MPI2_DEFAULT_REPLY *reply,
 		mpr_dprint(sc, MPR_FAULT, "Doorbell failed to activate\n");
 		return (ENXIO);
 	}
-
 	mpr_regwrite(sc, MPI2_HOST_INTERRUPT_STATUS_OFFSET, 0x0);
 	if (mpr_wait_db_ack(sc, 5, sleep_flags) != 0) {
 		mpr_dprint(sc, MPR_FAULT, "Doorbell handshake failed\n");
@@ -1056,7 +1055,6 @@ mpr_request_sync(struct mpr_softc *sc, void *req, MPI2_DEFAULT_REPLY *reply,
 		mpr_dprint(sc, MPR_FAULT, "Timeout reading doorbell 0\n");
 		return (ENXIO);
 	}
-
 	data16[0] =
 	    mpr_regread(sc, MPI2_DOORBELL_OFFSET) & MPI2_DOORBELL_DATA_MASK;
 	mpr_regwrite(sc, MPI2_HOST_INTERRUPT_STATUS_OFFSET, 0x0);
@@ -1554,7 +1552,6 @@ mpr_alloc_requests(struct mpr_softc *sc)
 	t.flags = BUS_DMA_ALLOCNOW;
 	t.lockfunc = busdma_lock_mutex;
 	t.lockfuncarg = &sc->mpr_mtx;
-
 	if (bus_dma_template_tag(&t, &sc->buffer_dmat)) {
 		mpr_dprint(sc, MPR_ERROR, "Cannot allocate buffer DMA tag\n");
 		return (ENOMEM);

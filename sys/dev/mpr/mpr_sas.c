@@ -1048,11 +1048,9 @@ mprsas_action(struct cam_sim *sim, union ccb *ccb)
 		break;
 	}
 	case XPT_CALC_GEOMETRY:
-	{
 		cam_calc_geometry(&ccb->ccg, /*extended*/1);
 		mprsas_set_ccbstatus(ccb, CAM_REQ_CMP);
 		break;
-	}
 	case XPT_RESET_DEV:
 		mpr_dprint(sassc->sc, MPR_XINFO, "mprsas_action "
 		    "XPT_RESET_DEV\n");

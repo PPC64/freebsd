@@ -2416,6 +2416,7 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 
 	callout_stop(&cm->cm_callout);
 	mtx_assert(&sc->mpr_mtx, MA_OWNED);
+
 	sassc = sc->sassc;
 	ccb = cm->cm_complete_data;
 	csio = &ccb->csio;
@@ -2810,6 +2811,7 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 		mpr_dprint(sc, MPR_XINFO, "Command completed, unfreezing SIM "
 		    "queue\n");
 	}
+
 	if (mprsas_get_ccbstatus(ccb) != CAM_REQ_CMP) {
 		ccb->ccb_h.status |= CAM_DEV_QFRZN;
 		xpt_freeze_devq(ccb->ccb_h.path, /*count*/ 1);

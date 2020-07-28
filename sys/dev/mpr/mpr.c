@@ -2531,6 +2531,7 @@ mpr_intr_locked(void *data)
 		tdesc = 0xffffffffffffffff;
 		tdesc = atomic_swap_64((uint64_t *)desc, tdesc);
 		desc = (MPI2_REPLY_DESCRIPTORS_UNION *)&tdesc;
+
 		flags = desc->Default.ReplyFlags &
 		    MPI2_RPY_DESCRIPT_FLAGS_TYPE_MASK;
 		if ((flags == MPI2_RPY_DESCRIPT_FLAGS_UNUSED) ||

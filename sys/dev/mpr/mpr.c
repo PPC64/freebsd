@@ -1088,6 +1088,12 @@ mpr_request_sync(struct mpr_softc *sc, void *req, MPI2_DEFAULT_REPLY *reply,
 			    "Timeout reading doorbell %d\n", i);
 			return (ENXIO);
 		}
+
+		/*
+		 * If in a BE platform, swap bytes using le16toh to not
+		 * disturb 8 bit field neighbors in destination structure
+		 * pointed by data16.
+		 */
 		data16[i] = le16toh(mpr_regread(sc, MPI2_DOORBELL_OFFSET) &
 		    MPI2_DOORBELL_DATA_MASK);
 		mpr_regwrite(sc, MPI2_HOST_INTERRUPT_STATUS_OFFSET, 0x0);
@@ -1160,27 +1166,26 @@ mpr_enqueue_request(struct mpr_softc *sc, struct mpr_command *cm)
 static void
 adjust_iocfacts_endianness(MPI2_IOC_FACTS_REPLY *facts)
 {
-  facts->HeaderVersion = le16toh(facts->HeaderVersion);
-  facts->Reserved1 = le16toh(facts->Reserved1);
-  facts->IOCExceptions = le16toh(facts->IOCExceptions);
-  facts->IOCStatus = le16toh(facts->IOCStatus);
-  facts->IOCLogInfo = le32toh(facts->IOCLogInfo);
-  facts->RequestCredit = le16toh(facts->RequestCredit);
-  facts->ProductID = le16toh(facts->ProductID);
-  facts->IOCCapabilities = le32toh(facts->IOCCapabilities & 0xFFFF0000)
-    | le32toh(facts->IOCCapabilities & 0x0000FFFF) ;
-  facts->IOCRequestFrameSize = le16toh(facts->IOCRequestFrameSize);
-  facts->IOCMaxChainSegmentSize = le16toh(facts->IOCMaxChainSegmentSize);
-  facts->MaxInitiators = le16toh(facts->MaxInitiators);
-  facts->MaxTargets = le16toh(facts->MaxTargets);
-  facts->MaxSasExpanders = le16toh(facts->MaxSasExpanders);
-  facts->MaxEnclosures = le16toh(facts->MaxEnclosures);
-  facts->ProtocolFlags = le16toh(facts->ProtocolFlags);
-  facts->HighPriorityCredit = le16toh(facts->HighPriorityCredit);
-  facts->MaxReplyDescriptorPostQueueDepth = le16toh(facts->MaxReplyDescriptorPostQueueDepth);
-  facts->MaxDevHandle = le16toh(facts->MaxDevHandle);
-  facts->MaxPersistentEntries = le16toh(facts->MaxPersistentEntries);
-  facts->MinDevHandle = le16toh(facts->MinDevHandle);
+	facts->HeaderVersion = le16toh(facts->HeaderVersion);
+	facts->Reserved1 = le16toh(facts->Reserved1);
+	facts->IOCExceptions = le16toh(facts->IOCExceptions);
+	facts->IOCStatus = le16toh(facts->IOCStatus);
+	facts->IOCLogInfo = le32toh(facts->IOCLogInfo);
+	facts->RequestCredit = le16toh(facts->RequestCredit);
+	facts->ProductID = le16toh(facts->ProductID);
+	facts->IOCCapabilities = le32toh(facts->IOCCapabilities);
+	facts->IOCRequestFrameSize = le16toh(facts->IOCRequestFrameSize);
+	facts->IOCMaxChainSegmentSize = le16toh(facts->IOCMaxChainSegmentSize);
+	facts->MaxInitiators = le16toh(facts->MaxInitiators);
+	facts->MaxTargets = le16toh(facts->MaxTargets);
+	facts->MaxSasExpanders = le16toh(facts->MaxSasExpanders);
+	facts->MaxEnclosures = le16toh(facts->MaxEnclosures);
+	facts->ProtocolFlags = le16toh(facts->ProtocolFlags);
+	facts->HighPriorityCredit = le16toh(facts->HighPriorityCredit);
+	facts->MaxReplyDescriptorPostQueueDepth = le16toh(facts->MaxReplyDescriptorPostQueueDepth);
+	facts->MaxDevHandle = le16toh(facts->MaxDevHandle);
+	facts->MaxPersistentEntries = le16toh(facts->MaxPersistentEntries);
+	facts->MinDevHandle = le16toh(facts->MinDevHandle);
 }
 
 /*
@@ -2767,7 +2772,7 @@ mpr_update_events(struct mpr_softc *sc, struct mpr_event_handle *handle,
 	}
 #else
 	for (i = 0; i < MPI2_EVENT_NOTIFY_EVENTMASK_WORDS; i++)
-    evtreq->EventMasks[i] = htole32(sc->event_mask[i]);
+	    evtreq->EventMasks[i] = htole32(sc->event_mask[i]);
 #endif
 	cm->cm_desc.Default.RequestFlags = MPI2_REQ_DESCRIPT_FLAGS_DEFAULT_TYPE;
 	cm->cm_data = NULL;
@@ -2822,7 +2827,7 @@ mpr_reregister_events(struct mpr_softc *sc)
 	}
 #else
 	for (i = 0; i < MPI2_EVENT_NOTIFY_EVENTMASK_WORDS; i++)
-    evtreq->EventMasks[i] = htole32(sc->event_mask[i]);
+	    evtreq->EventMasks[i] = htole32(sc->event_mask[i]);
 #endif
 	cm->cm_desc.Default.RequestFlags = MPI2_REQ_DESCRIPT_FLAGS_DEFAULT_TYPE;
 	cm->cm_data = NULL;

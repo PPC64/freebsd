@@ -2422,8 +2422,8 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 	target_id = csio->ccb_h.target_id;
 	rep = (MPI2_SCSI_IO_REPLY *)cm->cm_reply;
 	mpr_dprint(sc, MPR_TRACE,
-	    "cm %p SMID %u ccb %p reply %p outstanding %u csio->scsi_status 0x%x,
-	    csio->dxfer_len 0x%x, csio->msg_le 0x%xn\n", cm,
+	    "cm %p SMID %u ccb %p reply %p outstanding %u csio->scsi_status 0x%x,"
+	    "csio->dxfer_len 0x%x, csio->msg_le 0x%xn\n", cm,
 	    cm->cm_desc.Default.SMID, cm->cm_ccb, cm->cm_reply,
 	    cm->cm_targ->outstanding, csio->scsi_status,
 	    csio->dxfer_len, csio->msg_len);

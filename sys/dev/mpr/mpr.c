@@ -1096,7 +1096,6 @@ mpr_request_sync(struct mpr_softc *sc, void *req, MPI2_DEFAULT_REPLY *reply,
 		}
 		data16[i] = le16toh(mpr_regread(sc, MPI2_DOORBELL_OFFSET) &
 		    MPI2_DOORBELL_DATA_MASK);
-
 		mpr_regwrite(sc, MPI2_HOST_INTERRUPT_STATUS_OFFSET, 0x0);
 	}
 

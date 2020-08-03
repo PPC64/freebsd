@@ -1181,6 +1181,57 @@ typedef struct _MPI2_EVENT_DATA_SAS_QUIESCE
   MPI2_POINTER PTR_MPI2_EVENT_DATA_SAS_QUIESCE,
   Mpi2EventDataSasQuiesce_t, MPI2_POINTER pMpi2EventDataSasQuiesce_t;
 
+/* FW Image Header */
+typedef struct _MPI2_FW_IMAGE_HEADER
+{
+    U32                     Signature;                  /* 0x00 */
+    U32                     Signature0;                 /* 0x04 */
+    U32                     Signature1;                 /* 0x08 */
+    U32                     Signature2;                 /* 0x0C */
+    MPI2_VERSION_UNION      MPIVersion;                 /* 0x10 */
+    MPI2_VERSION_UNION      FWVersion;                  /* 0x14 */
+    MPI2_VERSION_UNION      NVDATAVersion;              /* 0x18 */
+    MPI2_VERSION_UNION      PackageVersion;             /* 0x1C */
+    U16                     VendorID;                   /* 0x20 */
+    U16                     ProductID;                  /* 0x22 */
+    U16                     ProtocolFlags;              /* 0x24 */
+    U16                     Reserved26;                 /* 0x26 */
+    U32                     IOCCapabilities;            /* 0x28 */
+    U32                     ImageSize;                  /* 0x2C */
+    U32                     NextImageHeaderOffset;      /* 0x30 */
+    U32                     Checksum;                   /* 0x34 */
+    U32                     Reserved38;                 /* 0x38 */
+    U32                     Reserved3C;                 /* 0x3C */
+    U32                     Reserved40;                 /* 0x40 */
+    U32                     Reserved44;                 /* 0x44 */
+    U32                     Reserved48;                 /* 0x48 */
+    U32                     Reserved4C;                 /* 0x4C */
+    U32                     Reserved50;                 /* 0x50 */
+    U32                     Reserved54;                 /* 0x54 */
+    U32                     Reserved58;                 /* 0x58 */
+    U32                     Reserved5C;                 /* 0x5C */
+    U32                     Reserved60;                 /* 0x60 */
+    U32                     FirmwareVersionNameWhat;    /* 0x64 */
+    U8                      FirmwareVersionName[32];    /* 0x68 */
+    U32                     VendorNameWhat;             /* 0x88 */
+    U8                      VendorName[32];             /* 0x8C */
+    U32                     PackageNameWhat;            /* 0x88 */
+    U8                      PackageName[32];            /* 0x8C */
+    U32                     ReservedD0;                 /* 0xD0 */
+    U32                     ReservedD4;                 /* 0xD4 */
+    U32                     ReservedD8;                 /* 0xD8 */
+    U32                     ReservedDC;                 /* 0xDC */
+    U32                     ReservedE0;                 /* 0xE0 */
+    U32                     ReservedE4;                 /* 0xE4 */
+    U32                     ReservedE8;                 /* 0xE8 */
+    U32                     ReservedEC;                 /* 0xEC */
+    U32                     ReservedF0;                 /* 0xF0 */
+    U32                     ReservedF4;                 /* 0xF4 */
+    U32                     ReservedF8;                 /* 0xF8 */
+    U32                     ReservedFC;                 /* 0xFC */
+} MPI2_FW_IMAGE_HEADER, MPI2_POINTER PTR_MPI2_FW_IMAGE_HEADER,
+  Mpi2FWImageHeader_t, MPI2_POINTER pMpi2FWImageHeader_t;
+
 /* SAS Quiesce Event data ReasonCode values */
 #define MPI2_EVENT_SAS_QUIESCE_RC_STARTED                   (0x01)
 #define MPI2_EVENT_SAS_QUIESCE_RC_COMPLETED                 (0x02)

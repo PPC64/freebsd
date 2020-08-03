@@ -41,6 +41,7 @@ __RCSID("$FreeBSD$");
 #include <sys/ioctl.h>
 #include <sys/sysctl.h>
 #include <sys/uio.h>
+#include <sys/endian.h>
 
 #include <err.h>
 #include <fcntl.h>
@@ -49,9 +50,10 @@ __RCSID("$FreeBSD$");
 #include <string.h>
 #include <unistd.h>
 
-#include "mpsutil.h"
-#include <dev/mps/mps_ioctl.h>
 #include <dev/mpr/mpr_ioctl.h>
+#include <dev/mps/mps_ioctl.h>
+#include <dev/mpr/mpi/mpi2_ioc.h>
+#include "mpsutil.h"
 
 #ifndef USE_MPT_IOCTLS
 #define USE_MPT_IOCTLS
@@ -241,6 +243,8 @@ struct mprs_btdh_mapping {
         uint16_t        Reserved;
 };
 
+static void adjust_iocfacts_endianness(MPI2_IOC_FACTS_REPLY *facts);
+
 const char *
 mps_ioc_status(U16 IOCStatus)
 {
@@ -296,7 +300,7 @@ mps_set_slot_status(int fd, U16 handle, U16 slot, U32 status)
 	    NULL, 0, NULL, 0, 30) != 0)
 		return (errno);
 
-	if (!IOC_STATUS_SUCCESS(reply.IOCStatus))
+	if (!IOC_STATUS_SUCCESS(le16toh(reply.IOCStatus)))
 		return (EIO);
 	return (0);
 }
@@ -319,7 +323,7 @@ mps_read_config_page_header(int fd, U8 PageType, U8 PageNumber, U32 PageAddress,
 	    NULL, 0, NULL, 0, 30))
 		return (errno);
 
-	if (!IOC_STATUS_SUCCESS(reply.IOCStatus)) {
+	if (!IOC_STATUS_SUCCESS(le16toh(reply.IOCStatus))) {
 		if (IOCStatus != NULL)
 			*IOCStatus = reply.IOCStatus;
 		return (EIO);
@@ -342,13 +346,13 @@ mps_read_ext_config_page_header(int fd, U8 ExtPageType, U8 PageNumber, U32 PageA
 	req.Header.PageType = MPI2_CONFIG_PAGETYPE_EXTENDED;
 	req.ExtPageType = ExtPageType;
 	req.Header.PageNumber = PageNumber;
-	req.PageAddress = PageAddress;
+	req.PageAddress = htole32(PageAddress);
 
 	if (mps_pass_command(fd, &req, sizeof(req), &reply, sizeof(reply),
 	    NULL, 0, NULL, 0, 30))
 		return (errno);
 
-	if (!IOC_STATUS_SUCCESS(reply.IOCStatus)) {
+	if (!IOC_STATUS_SUCCESS(le16toh(reply.IOCStatus))) {
 		if (IOCStatus != NULL)
 			*IOCStatus = reply.IOCStatus;
 		return (EIO);
@@ -395,7 +399,7 @@ mps_read_config_page(int fd, U8 PageType, U8 PageNumber, U32 PageAddress,
 		errno = error;
 		return (NULL);
 	}
-	if (!IOC_STATUS_SUCCESS(reply.IOCStatus)) {
+	if (!IOC_STATUS_SUCCESS(le16toh(reply.IOCStatus))) {
 		if (IOCStatus != NULL)
 			*IOCStatus = reply.IOCStatus;
 		else
@@ -424,6 +428,7 @@ mps_read_extended_config_page(int fd, U8 ExtPageType, U8 PageVersion,
 	bzero(&header, sizeof(header));
 	error = mps_read_ext_config_page_header(fd, ExtPageType, PageNumber,
 	    PageAddress, &header, &pagelen, IOCStatus);
+
 	if (error) {
 		errno = error;
 		return (NULL);
@@ -432,14 +437,14 @@ mps_read_extended_config_page(int fd, U8 ExtPageType, U8 PageVersion,
 	bzero(&req, sizeof(req));
 	req.Function = MPI2_FUNCTION_CONFIG;
 	req.Action = MPI2_CONFIG_ACTION_PAGE_READ_CURRENT;
-	req.PageAddress = PageAddress;
+	req.PageAddress = htole32(PageAddress);
 	req.Header = header;
 	if (pagelen == 0)
 		pagelen = 4;
 	req.ExtPageLength = pagelen;
 	req.ExtPageType = ExtPageType;
 
-	len = pagelen * 4;
+	len = le16toh(pagelen) * 4;
 	buf = malloc(len);
 	if (mps_pass_command(fd, &req, sizeof(req), &reply, sizeof(reply),
 	    buf, len, NULL, 0, 30)) {
@@ -448,7 +453,7 @@ mps_read_extended_config_page(int fd, U8 ExtPageType, U8 PageVersion,
 		errno = error;
 		return (NULL);
 	}
-	if (!IOC_STATUS_SUCCESS(reply.IOCStatus)) {
+	if (!IOC_STATUS_SUCCESS(le16toh(reply.IOCStatus))) {
 		if (IOCStatus != NULL)
 			*IOCStatus = reply.IOCStatus;
 		else
@@ -471,7 +476,7 @@ mps_firmware_send(int fd, unsigned char *fw, uint32_t len, bool bios)
 	bzero(&reply, sizeof(reply));
 	req.Function = MPI2_FUNCTION_FW_DOWNLOAD;
 	req.ImageType = bios ? MPI2_FW_DOWNLOAD_ITYPE_BIOS : MPI2_FW_DOWNLOAD_ITYPE_FW;
-	req.TotalImageSize = len;
+	req.TotalImageSize = htole32(len);
 	req.MsgFlags = MPI2_FW_DOWNLOAD_MSGFLGS_LAST_SEGMENT;
 
 	if (mps_user_command(fd, &req, sizeof(req), &reply, sizeof(reply),
@@ -484,36 +489,53 @@ mps_firmware_send(int fd, unsigned char *fw, uint32_t len, bool bios)
 int
 mps_firmware_get(int fd, unsigned char **firmware, bool bios)
 {
-	MPI2_FW_UPLOAD_REQUEST req;
+	MPI2_FW_UPLOAD_REQUEST req2;
+	MPI25_FW_UPLOAD_REQUEST req25;
 	MPI2_FW_UPLOAD_REPLY reply;
+	MPI2_IOC_FACTS_REPLY *facts;
 	int size;
+	int req_len;
+	void *req;
 
 	*firmware = NULL;
-	bzero(&req, sizeof(req));
 	bzero(&reply, sizeof(reply));
-	req.Function = MPI2_FUNCTION_FW_UPLOAD;
-	req.ImageType = bios ? MPI2_FW_DOWNLOAD_ITYPE_BIOS : MPI2_FW_DOWNLOAD_ITYPE_FW;
+	facts = mps_get_iocfacts(fd);
+	if (facts->MsgVersion >= 0x0205) {
+		bzero(&req25, sizeof(req25));
+		req25.Function = MPI2_FUNCTION_FW_UPLOAD;
+		req25.ImageType = bios ? MPI2_FW_DOWNLOAD_ITYPE_BIOS :
+		    MPI2_FW_DOWNLOAD_ITYPE_FW;
+		req = &req25;
+		req_len = sizeof(req25);
+	} else {
+		bzero(&req2, sizeof(req2));
+		req2.Function = MPI2_FUNCTION_FW_UPLOAD;
+		req2.ImageType = bios ? MPI2_FW_DOWNLOAD_ITYPE_BIOS :
+		    MPI2_FW_DOWNLOAD_ITYPE_FW;
+		req = &req2;
+		req_len = sizeof(req2);
+	}
 
-	if (mps_user_command(fd, &req, sizeof(req), &reply, sizeof(reply),
+	if (mps_user_command(fd, req, req_len, &reply, sizeof(reply),
 	    NULL, 0, 0)) {
 		return (-1);
 	}
+
 	if (reply.ActualImageSize == 0) {
 		return (-1);
 	}
 
-	size = reply.ActualImageSize;
+	size = le32toh(reply.ActualImageSize);
 	*firmware = calloc(size, sizeof(unsigned char));
 	if (*firmware == NULL) {
 		warn("calloc");
 		return (-1);
 	}
-	if (mps_user_command(fd, &req, sizeof(req), &reply, sizeof(reply),
+	if (mps_user_command(fd, req, req_len, &reply, sizeof(reply),
 	    *firmware, size, 0)) {
 		free(*firmware);
 		return (-1);
 	}
-
 	return (size);
 }
 
@@ -761,6 +783,32 @@ mps_get_iocfacts(int fd)
 		errno = EINVAL;
 		return (NULL);
 	}
+	adjust_iocfacts_endianness(facts);
 	return (facts);
 }
 
+static void
+adjust_iocfacts_endianness(MPI2_IOC_FACTS_REPLY *facts)
+{
+  facts->MsgVersion = le16toh(facts->MsgVersion);
+  facts->HeaderVersion = le16toh(facts->HeaderVersion);
+  facts->Reserved1 = le16toh(facts->Reserved1);
+  facts->IOCExceptions = le16toh(facts->IOCExceptions);
+  facts->IOCStatus = le16toh(facts->IOCStatus);
+  facts->IOCLogInfo = le32toh(facts->IOCLogInfo);
+  facts->RequestCredit = le16toh(facts->RequestCredit);
+  facts->ProductID = le16toh(facts->ProductID);
+  facts->IOCCapabilities = le32toh(facts->IOCCapabilities);
+  facts->IOCRequestFrameSize = le16toh(facts->IOCRequestFrameSize);
+  facts->FWVersion.Word = le32toh(facts->FWVersion.Word);
+  facts->MaxInitiators = le16toh(facts->MaxInitiators);
+  facts->MaxTargets = le16toh(facts->MaxTargets);
+  facts->MaxSasExpanders = le16toh(facts->MaxSasExpanders);
+  facts->MaxEnclosures = le16toh(facts->MaxEnclosures);
+  facts->ProtocolFlags = le16toh(facts->ProtocolFlags);
+  facts->HighPriorityCredit = le16toh(facts->HighPriorityCredit);
+  facts->MaxReplyDescriptorPostQueueDepth = le16toh(facts->MaxReplyDescriptorPostQueueDepth);
+  facts->MaxDevHandle = le16toh(facts->MaxDevHandle);
+  facts->MaxPersistentEntries = le16toh(facts->MaxPersistentEntries);
+  facts->MinDevHandle = le16toh(facts->MinDevHandle);
+}

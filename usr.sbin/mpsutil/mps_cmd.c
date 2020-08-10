@@ -50,10 +50,9 @@ __RCSID("$FreeBSD$");
 #include <string.h>
 #include <unistd.h>
 
-#include <dev/mpr/mpr_ioctl.h>
-#include <dev/mps/mps_ioctl.h>
-#include <dev/mpr/mpi/mpi2_ioc.h>
 #include "mpsutil.h"
+#include <dev/mps/mps_ioctl.h>
+#include <dev/mpr/mpr_ioctl.h>
 
 #ifndef USE_MPT_IOCTLS
 #define USE_MPT_IOCTLS
@@ -489,34 +488,17 @@ mps_firmware_send(int fd, unsigned char *fw, uint32_t len, bool bios)
 int
 mps_firmware_get(int fd, unsigned char **firmware, bool bios)
 {
-	MPI2_FW_UPLOAD_REQUEST req2;
-	MPI25_FW_UPLOAD_REQUEST req25;
+	MPI2_FW_UPLOAD_REQUEST req;
 	MPI2_FW_UPLOAD_REPLY reply;
-	MPI2_IOC_FACTS_REPLY *facts;
 	int size;
-	int req_len;
-	void *req;
 
 	*firmware = NULL;
+	bzero(&req, sizeof(req));
 	bzero(&reply, sizeof(reply));
-	facts = mps_get_iocfacts(fd);
-	if (facts->MsgVersion >= 0x0205) {
-		bzero(&req25, sizeof(req25));
-		req25.Function = MPI2_FUNCTION_FW_UPLOAD;
-		req25.ImageType = bios ? MPI2_FW_DOWNLOAD_ITYPE_BIOS :
-		    MPI2_FW_DOWNLOAD_ITYPE_FW;
-		req = &req25;
-		req_len = sizeof(req25);
-	} else {
-		bzero(&req2, sizeof(req2));
-		req2.Function = MPI2_FUNCTION_FW_UPLOAD;
-		req2.ImageType = bios ? MPI2_FW_DOWNLOAD_ITYPE_BIOS :
-		    MPI2_FW_DOWNLOAD_ITYPE_FW;
-		req = &req2;
-		req_len = sizeof(req2);
-	}
+	req.Function = MPI2_FUNCTION_FW_UPLOAD;
+	req.ImageType = bios ? MPI2_FW_DOWNLOAD_ITYPE_BIOS : MPI2_FW_DOWNLOAD_ITYPE_FW;
 
-	if (mps_user_command(fd, req, req_len, &reply, sizeof(reply),
+	if (mps_user_command(fd, &req, sizeof(req), &reply, sizeof(reply),
 	    NULL, 0, 0)) {
 		return (-1);
 	}
@@ -531,11 +513,12 @@ mps_firmware_get(int fd, unsigned char **firmware, bool bios)
 		warn("calloc");
 		return (-1);
 	}
-	if (mps_user_command(fd, req, req_len, &reply, sizeof(reply),
+	if (mps_user_command(fd, &req, sizeof(req), &reply, sizeof(reply),
 	    *firmware, size, 0)) {
 		free(*firmware);
 		return (-1);
 	}
+
 	return (size);
 }
 
@@ -790,25 +773,28 @@ mps_get_iocfacts(int fd)
 static void
 adjust_iocfacts_endianness(MPI2_IOC_FACTS_REPLY *facts)
 {
-  facts->MsgVersion = le16toh(facts->MsgVersion);
-  facts->HeaderVersion = le16toh(facts->HeaderVersion);
-  facts->Reserved1 = le16toh(facts->Reserved1);
-  facts->IOCExceptions = le16toh(facts->IOCExceptions);
-  facts->IOCStatus = le16toh(facts->IOCStatus);
-  facts->IOCLogInfo = le32toh(facts->IOCLogInfo);
-  facts->RequestCredit = le16toh(facts->RequestCredit);
-  facts->ProductID = le16toh(facts->ProductID);
-  facts->IOCCapabilities = le32toh(facts->IOCCapabilities);
-  facts->IOCRequestFrameSize = le16toh(facts->IOCRequestFrameSize);
-  facts->FWVersion.Word = le32toh(facts->FWVersion.Word);
-  facts->MaxInitiators = le16toh(facts->MaxInitiators);
-  facts->MaxTargets = le16toh(facts->MaxTargets);
-  facts->MaxSasExpanders = le16toh(facts->MaxSasExpanders);
-  facts->MaxEnclosures = le16toh(facts->MaxEnclosures);
-  facts->ProtocolFlags = le16toh(facts->ProtocolFlags);
-  facts->HighPriorityCredit = le16toh(facts->HighPriorityCredit);
-  facts->MaxReplyDescriptorPostQueueDepth = le16toh(facts->MaxReplyDescriptorPostQueueDepth);
-  facts->MaxDevHandle = le16toh(facts->MaxDevHandle);
-  facts->MaxPersistentEntries = le16toh(facts->MaxPersistentEntries);
-  facts->MinDevHandle = le16toh(facts->MinDevHandle);
+	facts->MsgVersion = le16toh(facts->MsgVersion);
+	facts->HeaderVersion = le16toh(facts->HeaderVersion);
+	facts->Reserved1 = le16toh(facts->Reserved1);
+	facts->IOCExceptions = le16toh(facts->IOCExceptions);
+	facts->IOCStatus = le16toh(facts->IOCStatus);
+	facts->IOCLogInfo = le32toh(facts->IOCLogInfo);
+	facts->RequestCredit = le16toh(facts->RequestCredit);
+	facts->ProductID = le16toh(facts->ProductID);
+	facts->IOCCapabilities = le32toh(facts->IOCCapabilities);
+	facts->IOCRequestFrameSize =
+	    le16toh(facts->IOCRequestFrameSize);
+	facts->FWVersion.Word = le32toh(facts->FWVersion.Word);
+	facts->MaxInitiators = le16toh(facts->MaxInitiators);
+	facts->MaxTargets = le16toh(facts->MaxTargets);
+	facts->MaxSasExpanders = le16toh(facts->MaxSasExpanders);
+	facts->MaxEnclosures = le16toh(facts->MaxEnclosures);
+	facts->ProtocolFlags = le16toh(facts->ProtocolFlags);
+	facts->HighPriorityCredit = le16toh(facts->HighPriorityCredit);
+	facts->MaxReplyDescriptorPostQueueDepth =
+	    le16toh(facts->MaxReplyDescriptorPostQueueDepth);
+	facts->MaxDevHandle = le16toh(facts->MaxDevHandle);
+	facts->MaxPersistentEntries =
+	    le16toh(facts->MaxPersistentEntries);
+	facts->MinDevHandle = le16toh(facts->MinDevHandle);
 }

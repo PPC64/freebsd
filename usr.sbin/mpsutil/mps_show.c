@@ -522,6 +522,7 @@ show_devices(int ac, char **av)
 			return (error);
 		}
 		handle = le16toh(device->DevHandle);
+
 		if (device->ParentDevHandle == 0x0) {
 			free(device);
 			continue;
@@ -530,7 +531,6 @@ show_devices(int ac, char **av)
 		bus = 0xffff;
 		target = 0xffff;
 		error = mps_map_btdh(fd, &handle, &bus, &target);
-
 		if (error) {
 			free(device);
 			continue;

@@ -427,7 +427,6 @@ mps_read_extended_config_page(int fd, U8 ExtPageType, U8 PageVersion,
 	bzero(&header, sizeof(header));
 	error = mps_read_ext_config_page_header(fd, ExtPageType, PageNumber,
 	    PageAddress, &header, &pagelen, IOCStatus);
-
 	if (error) {
 		errno = error;
 		return (NULL);
@@ -502,7 +501,6 @@ mps_firmware_get(int fd, unsigned char **firmware, bool bios)
 	    NULL, 0, 0)) {
 		return (-1);
 	}
-
 	if (reply.ActualImageSize == 0) {
 		return (-1);
 	}

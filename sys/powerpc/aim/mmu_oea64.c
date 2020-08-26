@@ -262,9 +262,12 @@ static void		moea64_remove_locked(pmap_t, vm_offset_t,
 #define	SP_MASK			(SP_SIZE - 1)
 #define	SP_PAGES		(1 << VM_LEVEL_0_ORDER)
 
-/* PVO (vaddr) bits that must match for promotion to succeed. */
-#define	PVO_PROMOTE		(PVO_WIRED | PVO_MANAGED | PVO_LARGE | \
-				 PVO_PTEGIDX_VALID)
+/*
+ * PVO flags (in vaddr) that must match for promotion to succeed.
+ * Note that protection bits are checked separately, as they reside in
+ * another field.
+ */
+#define	PVO_FLAGS_PROMOTE	(PVO_WIRED | PVO_MANAGED | PVO_PTEGIDX_VALID)
 
 #define	PVO_IS_SP(pvo)		(((pvo)->pvo_vaddr & PVO_LARGE) && \
 				 (pvo)->pvo_pmap != kernel_pmap)
@@ -278,9 +281,9 @@ static void		moea64_remove_locked(pmap_t, vm_offset_t,
 static SYSCTL_NODE(_vm, OID_AUTO, pmap, CTLFLAG_RD, 0,
     "VM/pmap parameters");
 
-static int pg_ps_enabled = 0;
-SYSCTL_INT(_vm_pmap, OID_AUTO, pg_ps_enabled, CTLFLAG_RDTUN,
-    &pg_ps_enabled, 0, "Enable support for transparent superpages");
+static int superpages_enabled = 0;
+SYSCTL_INT(_vm_pmap, OID_AUTO, superpages_enabled, CTLFLAG_RDTUN,
+    &superpages_enabled, 0, "Enable support for transparent superpages");
 
 static SYSCTL_NODE(_vm_pmap, OID_AUTO, sp, CTLFLAG_RD, 0,
     "SP page mapping counters");
@@ -327,7 +330,7 @@ static int moea64_sp_enter(pmap_t pmap, vm_offset_t va,
 static struct pvo_entry *moea64_sp_remove(struct pvo_entry *sp,
     struct pvo_dlist *tofree);
 
-static int moea64_sp_promote(pmap_t pmap, vm_offset_t va, vm_page_t m);
+static void moea64_sp_promote(pmap_t pmap, vm_offset_t va, vm_page_t m);
 static void moea64_sp_demote_aligned(struct pvo_entry *sp);
 static void moea64_sp_demote(struct pvo_entry *pvo);
 
@@ -1675,9 +1678,11 @@ out:
 	 * don't try page promotion as it is not possible.
 	 * This reduces the number of promotion failures dramatically.
 	 */
-	if (pmap != kernel_pmap && pvo != NULL &&
+	if (moea64_ps_enabled(pmap) && pmap != kernel_pmap && pvo != NULL &&
 	    (pvo->pvo_vaddr & PVO_MANAGED) != 0 &&
-	    (va & SP_MASK) == (VM_PAGE_TO_PHYS(m) & SP_MASK))
+	    (va & SP_MASK) == (VM_PAGE_TO_PHYS(m) & SP_MASK) &&
+	    (m->flags & PG_FICTITIOUS) == 0 &&
+	    vm_reserv_level_iffullpop(m) == 0)
 		moea64_sp_promote(pmap, va, m);
 
 	return (KERN_SUCCESS);
@@ -1873,20 +1878,20 @@ moea64_init()
 	/*
 	 * Are large page mappings enabled?
 	 */
-	TUNABLE_INT_FETCH("vm.pmap.pg_ps_enabled", &pg_ps_enabled);
-	if (pg_ps_enabled) {
+	TUNABLE_INT_FETCH("vm.pmap.superpages_enabled", &superpages_enabled);
+	if (superpages_enabled) {
 		KASSERT(MAXPAGESIZES > 1 && pagesizes[1] == 0,
 		    ("moea64_init: can't assign to pagesizes[1]"));
 
 		if (moea64_large_page_size == 0) {
 			printf("mmu_oea64: HW does not support large pages. "
 					"Disabling superpages...\n");
-			pg_ps_enabled = 0;
+			superpages_enabled = 0;
 		} else if (!moea64_has_lp_4k_16m) {
 			printf("mmu_oea64: "
 			    "HW does not support mixed 4KB/16MB page sizes. "
 			    "Disabling superpages...\n");
-			pg_ps_enabled = 0;
+			superpages_enabled = 0;
 		} else
 			pagesizes[1] = SP_SIZE;
 	}
@@ -3452,7 +3457,7 @@ DEFINE_OEA64_IFUNC(int64_t, pte_synch, (struct pvo_entry *), moea64_null_method)
 static bool
 moea64_ps_enabled(pmap_t pmap)
 {
-	return (pg_ps_enabled);
+	return (superpages_enabled);
 }
 
 static void
@@ -3675,18 +3680,13 @@ moea64_sp_enter(pmap_t pmap, vm_offset_t va, vm_page_t m,
 	return (KERN_SUCCESS);
 }
 
-static int
+static void
 moea64_sp_promote(pmap_t pmap, vm_offset_t va, vm_page_t m)
 {
 	struct pvo_entry *first, *pvo;
 	vm_paddr_t pa, pa_end;
 	vm_offset_t sva, va_end;
 	int64_t sp_refchg;
-
-	/* Return if page promotion is not possible. */
-	if ((m->flags & PG_FICTITIOUS) != 0 ||
-	    vm_reserv_level_iffullpop(m) != 0 || !moea64_ps_enabled(pmap))
-		return (1);
 
 	/* This CTR may generate a lot of output. */
 	/* CTR2(KTR_PMAP, "%s: va=%#jx", __func__, (uintmax_t)va); */
@@ -3732,13 +3732,13 @@ moea64_sp_promote(pmap_t pmap, vm_offset_t va, vm_page_t m)
 			atomic_add_long(&sp_p_fail_pa, 1);
 			goto error;
 		}
-		if ((first->pvo_vaddr & PVO_PROMOTE) !=
-		    (pvo->pvo_vaddr & PVO_PROMOTE)) {
+		if ((first->pvo_vaddr & PVO_FLAGS_PROMOTE) !=
+		    (pvo->pvo_vaddr & PVO_FLAGS_PROMOTE)) {
 			CTR5(KTR_PMAP, "%s: PVO flags don't match: "
 			    "pmap=%p, va=%#jx, pvo_flags=%#jx, exp_flags=%#jx",
 			    __func__, pmap, (uintmax_t)va,
-			    (uintmax_t)(pvo->pvo_vaddr & PVO_PROMOTE),
-			    (uintmax_t)(first->pvo_vaddr & PVO_PROMOTE));
+			    (uintmax_t)(pvo->pvo_vaddr & PVO_FLAGS_PROMOTE),
+			    (uintmax_t)(first->pvo_vaddr & PVO_FLAGS_PROMOTE));
 			atomic_add_long(&sp_p_fail_flags, 1);
 			goto error;
 		}
@@ -3805,14 +3805,12 @@ moea64_sp_promote(pmap_t pmap, vm_offset_t va, vm_page_t m)
 	atomic_add_long(&sp_promotions, 1);
 	CTR3(KTR_PMAP, "%s: success for va %#jx in pmap %p",
 	    __func__, (uintmax_t)sva, pmap);
-
-	return (0);
+	return;
 
 error:
 	atomic_add_long(&sp_p_failures, 1);
 	PMAP_UNLOCK(pmap);
 	PV_PAGE_UNLOCK(m);
-	return (1);
 }
 
 static void

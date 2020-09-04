@@ -488,6 +488,7 @@ trap(struct trapframe *frame)
 	}
 
 	if (sig != 0) {
+		/* Translate fault for emulators (e.g. Linux) */
 		if (p->p_sysent->sv_transtrap != NULL)
 			sig = (p->p_sysent->sv_transtrap)(sig, type);
 		ksiginfo_init_trap(&ksi);

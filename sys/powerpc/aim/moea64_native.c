@@ -142,6 +142,36 @@ __FBSDID("$FreeBSD$");
 static bool moea64_crop_tlbie;
 static bool moea64_need_lock;
 
+#define ___PPC_RA(a)	(((a) & 0x1f) << 16)
+#define ___PPC_RB(b)	(((b) & 0x1f) << 11)
+#define ___PPC_RS(s)	(((s) & 0x1f) << 21)
+#define ___PPC_RT(t)	___PPC_RS(t)
+#define ___PPC_R(r)	(((r) & 0x1) << 16)
+#define ___PPC_PRS(prs)	(((prs) & 0x1) << 17)
+#define ___PPC_RIC(ric)	(((ric) & 0x3) << 18)
+
+#define PPC_BITLSHIFT(bit)	(sizeof(long)*NBBY - 1 - (bit))
+#define PPC_BIT(bit)		(1UL << PPC_BITLSHIFT(bit))
+#define PPC_BITLSHIFT_VAL(val, bit) ((val) << PPC_BITLSHIFT(bit))
+
+#define PPC_INST_TLBIE			0x7c000264
+#define	PPC_TLBIE_5(rb,rs,ric,prs,r)				\
+	__XSTRING(.long PPC_INST_TLBIE |			\
+			  ___PPC_RB(rb) | ___PPC_RS(rs) |	\
+			  ___PPC_RIC(ric) | ___PPC_PRS(prs) |	\
+			  ___PPC_R(r))
+
+#define PPC_INST_SLBIA			0x7c0003e4
+#define PPC_SLBIA(IH)	__XSTRING(.long PPC_INST_SLBIA | \
+				       ((IH & 0x7) << 21))
+
+#define PPC_INVALIDATE_ERAT		PPC_SLBIA(7)
+
+#define ERAT_FIX	0
+#define STQ_FIX		0
+#define ERAT_INVAL	0
+#define NEED_LOCK	0
+
 /*
  * The tlbie instruction has two forms: an old one used by PowerISA
  * 2.03 and prior, and a newer one used by PowerISA 2.06 and later.
@@ -157,7 +187,11 @@ TLBIE(uint64_t vpn, uint64_t oldptehi)
 #endif
 
 	static volatile u_int tlbie_lock = 0;
+#if NEED_LOCK
+	bool need_lock = true;
+#else
 	bool need_lock = moea64_need_lock;
+#endif
 
 	vpn <<= ADDR_PIDX_SHFT;
 
@@ -191,8 +225,38 @@ TLBIE(uint64_t vpn, uint64_t oldptehi)
 	    (oldptehi & LPTE_KERNEL_VSID_BIT) == 0)
 		vpn |= AP_16M;
 
+	/* CTR1(KTR_DEV, "TLBIE 0x%016lx", vpn); */
+
 	__asm __volatile("li 0, 0 \n tlbie %0, 0" :: "r"(vpn) : "r0", "memory");
+
+#if ERAT_FIX
+	{
+		unsigned long rb,rs,prs,r,ric;
+
+		rb = PPC_BIT(52);
+		rs = 0;
+		prs = 0;
+		r = 1;
+		ric = 0;
+
+		__asm __volatile("ptesync": : :"memory");
+		__asm __volatile(PPC_TLBIE_5(%0, %4, %3, %2, %1)
+		    : : "r"(rb), "i"(r), "i"(prs), "i"(ric), "r"(rs) : "memory");
+	}
+#endif
+
+#if STQ_FIX
+		__asm __volatile("ptesync": : :"memory");
+		__asm __volatile(PPC_TLBIE_5(%0,%1,0,0,0)
+		    : : "r"(vpn), "r"(0));
+#endif
+
 	__asm __volatile("eieio; tlbsync; ptesync" ::: "memory");
+
+#if ERAT_INVAL
+	__asm __volatile(PPC_INVALIDATE_ERAT "; isync" : : :"memory");
+#endif
+
 #else
 	vpn_hi = (uint32_t)(vpn >> 32);
 	vpn_lo = (uint32_t)vpn;
@@ -325,6 +389,8 @@ moea64_pte_clear_native(struct pvo_entry *pvo, uint64_t ptebit)
 	if ((be64toh(pt->pte_hi) & LPTE_AVPN_MASK) !=
 	    (properpt.pte_hi & LPTE_AVPN_MASK)) {
 		/* Evicted */
+		CTR3(KTR_DEV, "EVICTED %s va=0x%016lx pa=0x%016lx",
+			__func__, PVO_VADDR(pvo), pvo->pvo_pte.pa & LPTE_RPGN);
 		rw_runlock(&moea64_eviction_lock);
 		return (-1);
 	}
@@ -368,6 +434,8 @@ moea64_pte_unset_native(struct pvo_entry *pvo)
 	if ((be64toh(pt->pte_hi & LPTE_AVPN_MASK)) != pvo_ptevpn) {
 		/* Evicted */
 		STAT_MOEA64(moea64_pte_overflow--);
+		CTR3(KTR_DEV, "EVICTED %s va=0x%016lx pa=0x%016lx",
+			__func__, PVO_VADDR(pvo), pvo->pvo_pte.pa & LPTE_RPGN);
 		rw_runlock(&moea64_eviction_lock);
 		return (-1);
 	}
@@ -406,6 +474,8 @@ moea64_pte_replace_inval_native(struct pvo_entry *pvo,
 	    (properpt.pte_hi & LPTE_AVPN_MASK)) {
 		/* Evicted */
 		STAT_MOEA64(moea64_pte_overflow--);
+		CTR3(KTR_DEV, "EVICTED %s va=0x%016lx pa=0x%016lx",
+			__func__, PVO_VADDR(pvo), pvo->pvo_pte.pa & LPTE_RPGN);
 		rw_runlock(&moea64_eviction_lock);
 		return (-1);
 	}

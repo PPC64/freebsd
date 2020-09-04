@@ -406,16 +406,31 @@ trap(struct trapframe *frame)
 #endif
  				sig = SIGTRAP;
 				ucode = TRAP_BRKPT;
-			} else {
-				sig = ppc_instr_emulate(frame, td);
-				if (sig == SIGILL) {
-					if (frame->srr1 & EXC_PGM_PRIV)
-						ucode = ILL_PRVOPC;
-					else if (frame->srr1 & EXC_PGM_ILLEGAL)
-						ucode = ILL_ILLOPC;
-				} else if (sig == SIGFPE)
-					ucode = FPE_FLTINV;	/* Punt for now, invalid operation. */
+				break;
 			}
+
+			if ((frame->srr1 & EXC_PGM_FPENABLED) &&
+			     (td->td_pcb->pcb_flags & PCB_FPU))
+				sig = SIGFPE;
+			else
+				sig = ppc_instr_emulate(frame, td);
+
+			if (sig == SIGILL) {
+				if (frame->srr1 & EXC_PGM_PRIV)
+					ucode = ILL_PRVOPC;
+				else if (frame->srr1 & EXC_PGM_ILLEGAL)
+					ucode = ILL_ILLOPC;
+			} else if (sig == SIGFPE) {
+				ucode = get_fpu_exception(td);
+				//register_t msr = mfmsr();
+				//msr &= ~PSL_RI;
+				//mtmsr(msr);
+				frame->srr1 &= ~PSL_RI;
+				frame->srr1 &= ~PSL_FE0;
+				frame->srr1 &= ~PSL_FE1;
+
+			}
+
 			break;
 
 		case EXC_MCHK:
@@ -966,7 +981,7 @@ fix_unaligned(struct thread *td, struct trapframe *frame)
 static void
 normalize_inputs(void)
 {
-	unsigned long msr;
+	register_t msr;
 
 	/* enable VSX */
 	msr = mfmsr();

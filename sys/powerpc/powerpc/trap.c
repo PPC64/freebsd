@@ -177,7 +177,6 @@ SYSCTL_INT(_machdep, OID_AUTO, uprintf_signal, CTLFLAG_RWTUN,
     "\020L3DAT\017APE\016DPE\015TEA\014b20\013b21\012b22\011b23"	\
     "\010b24\007b25\006b26\005b27\004b28\003b29\002b30\001b31"
 
-
 static const char *
 trapname(u_int vector)
 {

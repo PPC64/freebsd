@@ -96,7 +96,7 @@ save_fpu_int(struct thread *td)
 	 * Disable floating-point again
 	 */
 	isync();
-	mtmsr(msr);
+	mtmsr(msr & ~(PSL_FP | PSL_VSX | PSL_FE0 | PSL_FE1) );
 }
 
 void
@@ -177,7 +177,7 @@ enable_fpu(struct thread *td)
 	}
 
 	isync();
-	mtmsr(msr);
+	mtmsr(msr & ~(PSL_FP | PSL_FE0 | PSL_FE1));
 }
 
 void

@@ -424,7 +424,7 @@ trap(struct trapframe *frame)
 				//register_t msr = mfmsr();
 				//msr &= ~PSL_RI;
 				//mtmsr(msr);
-				frame->srr1 &= ~PSL_RI;
+				//frame->srr1 &= ~PSL_RI;
 				frame->srr1 &= ~PSL_FE0;
 				frame->srr1 &= ~PSL_FE1;
 

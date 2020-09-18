@@ -503,7 +503,6 @@ trap(struct trapframe *frame)
 				(u_long)frame->srr0, (u_long)frame->srr1);
 		}
 
-
 		trapsignal(td, &ksi);
 	}
 

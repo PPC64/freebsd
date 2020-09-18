@@ -498,8 +498,9 @@ trap(struct trapframe *frame)
 		if (uprintf_signal) {
 			uprintf("pid %d comm %s: signal %d code %d type %d "
 				"addr 0x%lx r1 0x%lx srr0 0x%lx srr1 0x%lx\n",
-			p->p_pid, p->p_comm, sig, ucode, type, addr,
-			frame->fixreg[1], frame->srr0, frame->srr1);
+			p->p_pid, p->p_comm, sig, ucode, type, (u_long)addr,
+			(u_long)frame->fixreg[1], (u_long)frame->srr0, 
+			(u_long)frame->srr1);
 		}
 
 

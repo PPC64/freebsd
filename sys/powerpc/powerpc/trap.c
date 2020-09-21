@@ -416,12 +416,14 @@ trap(struct trapframe *frame)
 					ucode = ILL_ILLOPC;
 			} else if (sig == SIGFPE) {
 				ucode = get_fpu_exception(td);
-				//register_t msr = mfmsr();
-				//msr &= ~PSL_RI;
-				//mtmsr(msr);
-				//frame->srr1 &= ~PSL_RI;
-				frame->srr1 &= ~PSL_FE0;
-				frame->srr1 &= ~PSL_FE1;
+
+				/* 
+				 * XXX: disable Floating Point Exceptions since
+				 * it triggers FPE trap again when caling
+				 * user-defined signal handler. Should we 
+				 * it disable specific exception bit instead?
+				 */
+				cleanup_fpscr();
 
 			}
 

@@ -96,7 +96,7 @@ save_fpu_int(struct thread *td)
 	 * Disable floating-point again
 	 */
 	isync();
-	mtmsr(msr & ~(PSL_FP | PSL_VSX | PSL_FE0 | PSL_FE1) );
+	mtmsr(msr);
 }
 
 void
@@ -177,7 +177,7 @@ enable_fpu(struct thread *td)
 	}
 
 	isync();
-	mtmsr(msr & ~(PSL_FP | PSL_FE0 | PSL_FE1));
+	mtmsr(msr);
 }
 
 void
@@ -211,6 +211,23 @@ save_fpu_nodrop(struct thread *td)
 
 
 /*
+ * Clear Floating-Point Status and Control Register
+ */
+void
+cleanup_fpscr()
+{
+	register_t msr;
+	msr = mfmsr();
+	mtmsr(msr | PSL_FP | PSL_VSX);
+
+	mtfsf(0);
+
+	isync();
+	mtmsr(msr);
+}
+
+
+/*
  *  * Returns the current fp exception
  *   */
 u_int
@@ -218,40 +235,30 @@ get_fpu_exception(struct thread *td)
 {
 	register_t msr;
 	u_int ucode;
-	uint64_t reg;
+	register_t reg;
 
 	critical_enter();
 
 	msr = mfmsr();
 	mtmsr(msr | PSL_FP);
-	__asm __volatile ("mffs 0; stfd 0,0(%0)"
-			:: "b"(&reg));
+
+	reg = mffs();
 
 	isync();
 	mtmsr(msr);
 
 	critical_exit();
 
-	if (reg & FPSCR_ZX){
+	if (reg & FPSCR_ZX)
 		ucode = FPE_FLTDIV;
-		printf("%s:%d FPE_FLTDIV\n", __func__, __LINE__);
-	}
-	else if (reg & FPSCR_OX) {
+	else if (reg & FPSCR_OX)
 		ucode = FPE_FLTOVF;
-		printf("%s:%d FPE_FLTOVF\n", __func__, __LINE__);
-	}
-	else if (reg & FPSCR_UX) {
+	else if (reg & FPSCR_UX)
 		ucode = FPE_FLTUND;
-		printf("%s:%d FPE_FLTUND\n", __func__, __LINE__);
-	}
-	else if (reg & FPSCR_XX) {
+	else if (reg & FPSCR_XX)
 		ucode = FPE_FLTRES;
-		printf("%s:%d FPE_FLTRES\n", __func__, __LINE__);
-	}
-	else {
+	else
 		ucode = FPE_FLTINV;
-		printf("%s:%d FPE_FLTINV\n", __func__, __LINE__);
-	}
 
 	return ucode;
 }

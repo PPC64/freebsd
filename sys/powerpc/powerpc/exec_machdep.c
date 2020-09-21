@@ -557,18 +557,7 @@ cleanup_power_extras(struct thread *td)
 	if (pcb_flags & PCB_CDSCR) 
 		mtspr(SPR_DSCRP, 0);
 
-	register_t msr;
-	msr = mfmsr();
-	mtmsr(msr | PSL_FP | PSL_VSX);
-
-	register_t fpscr = 0;
-
-	__asm __volatile ("lfd 0,0(%0); mtfsf 0xff,0"
-			:: "b"(&fpscr));
-
-	isync();
-	mtmsr(msr & ~(PSL_FP | PSL_FE0 | PSL_FE1));
-
+	cleanup_fpscr();
 }
 
 /*

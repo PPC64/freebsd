@@ -52,6 +52,25 @@ __FBSDID("$FreeBSD$");
 #include <sys/kthread.h>
 #include <sys/taskqueue.h>
 #include <sys/smp.h>
+#include <sys/endian.h>
+
+/*
+ * MRSAS_DEBUG
+ *
+ * 0 - disabled
+ * 1 - enable error messages (EPRINTF)
+ * 2 - enable error and debug messages (DPRINTF)
+ */
+#define MRSAS_DEBUG   2
+#if MRSAS_DEBUG >= 2
+/* debug printf */
+//#define DPRINTF(fmt, ...)       mrsas_dprint(sc, MRSAS_TRACE, "coelho %s: " fmt "\n", __func__, ## __VA_ARGS__);
+#define DPRINTF(fmt, ...)       
+#else
+#define DPRINTF(fmt, ...)       ((void)0)
+#endif
+
+#define pci_read_header_2(d, c)	htole16(pci_read_config(d, c, 2))
 
 /*
  * Function prototypes
@@ -278,6 +297,7 @@ mrsas_read_reg_with_retries(struct mrsas_softc *sc, int offset)
 {
 	u_int32_t i = 0, ret_val;
 
+	//DPRINTF("enter. sc->is_aero = %d",  sc->is_aero);
 	if (sc->is_aero) {
 		do {
 			ret_val = mrsas_read_reg(sc, offset);
@@ -286,6 +306,7 @@ mrsas_read_reg_with_retries(struct mrsas_softc *sc, int offset)
 	} else
 		ret_val = mrsas_read_reg(sc, offset);
 
+	//DPRINTF("exit. ret_val = 0x%08x",  ret_val);
 	return ret_val;
 }
 
@@ -300,7 +321,9 @@ mrsas_write_reg(struct mrsas_softc *sc, int offset,
 	bus_space_tag_t bus_tag = sc->bus_tag;
 	bus_space_handle_t bus_handle = sc->bus_handle;
 
+	//DPRINTF("enter. offset = 0x%08x 0x%x",  offset, *(u_int32_t*)(sc->bus_handle+offset));
 	bus_space_write_4(bus_tag, bus_handle, offset, value);
+	//DPRINTF("enter. offset = 0x%08x 0x%x",  offset, *(u_int32_t*)(sc->bus_handle+offset));
 }
 
 u_int32_t
@@ -326,6 +349,7 @@ mrsas_disable_intr(struct mrsas_softc *sc)
 	mrsas_write_reg(sc, offsetof(mrsas_reg_set, outbound_intr_mask), mask);
 	/* Dummy read to force pci flush */
 	status = mrsas_read_reg(sc, offsetof(mrsas_reg_set, outbound_intr_mask));
+	//DPRINTF("status = 0x%08x", status);
 }
 
 void
@@ -337,9 +361,11 @@ mrsas_enable_intr(struct mrsas_softc *sc)
 	sc->mask_interrupts = 0;
 	mrsas_write_reg(sc, offsetof(mrsas_reg_set, outbound_intr_status), ~0);
 	status = mrsas_read_reg(sc, offsetof(mrsas_reg_set, outbound_intr_status));
+	//DPRINTF("status0 = 0x%08x\n", status);
 
 	mrsas_write_reg(sc, offsetof(mrsas_reg_set, outbound_intr_mask), ~mask);
 	status = mrsas_read_reg(sc, offsetof(mrsas_reg_set, outbound_intr_mask));
+	//DPRINTF("status1 = 0x%08x\n", status);
 }
 
 static int
@@ -609,6 +635,7 @@ mrsas_get_seq_num(struct mrsas_softc *sc,
 	}
 	dcmd = &cmd->frame->dcmd;
 
+	//DPRINTF("0");
 	if (mrsas_alloc_evt_log_info_cmd(sc) != SUCCESS) {
 		device_printf(sc->mrsas_dev, "Cannot allocate evt log info cmd\n");
 		mrsas_release_mfi_cmd(cmd);
@@ -619,15 +646,16 @@ mrsas_get_seq_num(struct mrsas_softc *sc,
 	dcmd->cmd = MFI_CMD_DCMD;
 	dcmd->cmd_status = 0x0;
 	dcmd->sge_count = 1;
-	dcmd->flags = MFI_FRAME_DIR_READ;
+	dcmd->flags = htole16(MFI_FRAME_DIR_READ);
 	dcmd->timeout = 0;
 	dcmd->pad_0 = 0;
-	dcmd->data_xfer_len = sizeof(struct mrsas_evt_log_info);
-	dcmd->opcode = MR_DCMD_CTRL_EVENT_GET_INFO;
-	dcmd->sgl.sge32[0].phys_addr = sc->el_info_phys_addr;
-	dcmd->sgl.sge32[0].length = sizeof(struct mrsas_evt_log_info);
+	dcmd->data_xfer_len = htole32(sizeof(struct mrsas_evt_log_info));
+	dcmd->opcode = htole32(MR_DCMD_CTRL_EVENT_GET_INFO);
+	dcmd->sgl.sge32[0].phys_addr = htole32(sc->el_info_phys_addr & 0xFFFFFFFF);
+	dcmd->sgl.sge32[0].length = htole32(sizeof(struct mrsas_evt_log_info));
 
 	retcode = mrsas_issue_blocked_cmd(sc, cmd);
+	//DPRINTF("retcode 0x%x", retcode);
 	if (retcode == ETIMEDOUT)
 		goto dcmd_timeout;
 
@@ -635,6 +663,8 @@ mrsas_get_seq_num(struct mrsas_softc *sc,
 	/*
 	 * Copy the data back into callers buffer
 	 */
+
+	//DPRINTF("newest_seq_num 0x%x, oldest_seq_num 0x%x", ((struct mrsas_evt_log_info*)sc->el_info_mem)->newest_seq_num, ((struct mrsas_evt_log_info*)sc->el_info_mem)->oldest_seq_num);
 	memcpy(eli, sc->el_info_mem, sizeof(struct mrsas_evt_log_info));
 	mrsas_free_evt_log_info_cmd(sc);
 
@@ -677,11 +707,13 @@ mrsas_register_aen(struct mrsas_softc *sc, u_int32_t seq_num,
 	 * class_locale that is superset of both old and current and re-issue
 	 * to the FW
 	 */
-
+  
+  //DPRINTF("0");
 	curr_aen.word = class_locale_word;
 
 	if (sc->aen_cmd) {
-		prev_aen.word = sc->aen_cmd->frame->dcmd.mbox.w[1];
+
+		prev_aen.word = le32toh(sc->aen_cmd->frame->dcmd.mbox.w[1]);
 
 		/*
 		 * A class whose enum value is smaller is inclusive of all
@@ -732,16 +764,16 @@ mrsas_register_aen(struct mrsas_softc *sc, u_int32_t seq_num,
 	dcmd->cmd = MFI_CMD_DCMD;
 	dcmd->cmd_status = 0x0;
 	dcmd->sge_count = 1;
-	dcmd->flags = MFI_FRAME_DIR_READ;
+	dcmd->flags = htole16(MFI_FRAME_DIR_READ);
 	dcmd->timeout = 0;
 	dcmd->pad_0 = 0;
-	dcmd->data_xfer_len = sizeof(struct mrsas_evt_detail);
-	dcmd->opcode = MR_DCMD_CTRL_EVENT_WAIT;
-	dcmd->mbox.w[0] = seq_num;
+	dcmd->data_xfer_len = htole32(sizeof(struct mrsas_evt_detail));
+	dcmd->opcode = htole32(MR_DCMD_CTRL_EVENT_WAIT);
+	dcmd->mbox.w[0] = htole32(seq_num);
 	sc->last_seq_num = seq_num;
-	dcmd->mbox.w[1] = curr_aen.word;
-	dcmd->sgl.sge32[0].phys_addr = (u_int32_t)sc->evt_detail_phys_addr;
-	dcmd->sgl.sge32[0].length = sizeof(struct mrsas_evt_detail);
+	dcmd->mbox.w[1] = htole32(curr_aen.word);
+	dcmd->sgl.sge32[0].phys_addr = htole32((u_int32_t)sc->evt_detail_phys_addr & 0xFFFFFFFF);
+	dcmd->sgl.sge32[0].length = htole32(sizeof(struct mrsas_evt_detail));
 
 	if (sc->aen_cmd != NULL) {
 		mrsas_release_mfi_cmd(cmd);
@@ -777,6 +809,7 @@ mrsas_start_aen(struct mrsas_softc *sc)
 	/* Get the latest sequence number from FW */
 
 	memset(&eli, 0, sizeof(eli));
+	//DPRINTF("0");
 
 	if (mrsas_get_seq_num(sc, &eli))
 		return -1;
@@ -800,6 +833,7 @@ mrsas_setup_msix(struct mrsas_softc *sc)
 {
 	int i;
 
+	DPRINTF("status 0x%x", mrsas_read_reg(sc, offsetof(mrsas_reg_set, outbound_intr_status)));
 	for (i = 0; i < sc->msix_vectors; i++) {
 		sc->irq_context[i].sc = sc;
 		sc->irq_context[i].MSIxIndex = i;
@@ -821,6 +855,7 @@ mrsas_setup_msix(struct mrsas_softc *sc)
 			goto irq_alloc_failed;
 		}
 	}
+	DPRINTF("status 0x%x", mrsas_read_reg(sc, offsetof(mrsas_reg_set, outbound_intr_status)));
 	return SUCCESS;
 
 irq_alloc_failed:
@@ -906,13 +941,19 @@ mrsas_attach(device_t dev)
 	/*
 	 * Set up PCI and registers
 	 */
-	cmd = pci_read_config(dev, PCIR_COMMAND, 2);
-	if ((cmd & PCIM_CMD_PORTEN) == 0) {
+  // coelho Linux does not do this check
+  //cmd = htole16(pci_read_config(dev, PCIR_COMMAND, 2));
+  cmd = pci_read_config(dev, PCIR_COMMAND, 2);
+	DPRINTF("cmd0 = 0x%08x", cmd);
+	/*if ((cmd & PCIM_CMD_PORTEN) == 0) {
 		return (ENXIO);
-	}
+	} */
+
 	/* Force the busmaster enable bit on. */
 	cmd |= PCIM_CMD_BUSMASTEREN;
 	pci_write_config(dev, PCIR_COMMAND, cmd, 2);
+	cmd = pci_read_config(dev, PCIR_COMMAND, 2);
+	DPRINTF("cmd = 0x%08x",cmd);
 
 	/* For Ventura/Aero system registers are mapped to BAR0 */
 	if (sc->is_ventura || sc->is_aero)
@@ -960,21 +1001,30 @@ mrsas_attach(device_t dev)
 	if (mrsas_init_fw(sc) != SUCCESS) {
 		goto attach_fail_fw;
 	}
+//  printf("333333 %d, %d, %p, %p, %p\n", sc->is_ventura, sc->is_aero, sc->bus_tag, &bs_be_tag, &bs_le_tag);
 	/* Register mrsas to CAM layer */
 	if ((mrsas_cam_attach(sc) != SUCCESS)) {
+		device_printf(sc->mrsas_dev, "Error attaching to CAM\n");
 		goto attach_fail_cam;
 	}
+	DPRINTF("Saindo....");
+	DPRINTF("status 0x%x", mrsas_read_reg(sc, offsetof(mrsas_reg_set, outbound_intr_status)));
+
 	/* Register IRQs */
 	if (mrsas_setup_irq(sc) != SUCCESS) {
 		goto attach_fail_irq;
 	}
+	DPRINTF("status 0x%x", mrsas_read_reg(sc, offsetof(mrsas_reg_set, outbound_intr_status)));
+
 	error = mrsas_kproc_create(mrsas_ocr_thread, sc,
 	    &sc->ocr_thread, 0, 0, "mrsas_ocr%d",
 	    device_get_unit(sc->mrsas_dev));
+
 	if (error) {
 		device_printf(sc->mrsas_dev, "Error %d starting OCR thread\n", error);
 		goto attach_fail_ocr_thread;
 	}
+
 	/*
 	 * After FW initialization and OCR thread creation
 	 * we will defer the cdev creation, AEN setup on ICH callback
@@ -994,6 +1044,7 @@ attach_fail_irq:
 	mrsas_teardown_intr(sc);
 attach_fail_cam:
 	mrsas_cam_detach(sc);
+	DPRINTF("Saindo....0");
 attach_fail_fw:
 	/* if MSIX vector is allocated and FW Init FAILED then release MSIX */
 	if (sc->msix_enable == 1)
@@ -1008,11 +1059,13 @@ attach_fail_fw:
 	mtx_destroy(&sc->mfi_cmd_pool_lock);
 	mtx_destroy(&sc->raidmap_lock);
 	mtx_destroy(&sc->stream_lock);
+	DPRINTF("Saindo....1");
 attach_fail:
 	if (sc->reg_res) {
 		bus_release_resource(sc->mrsas_dev, SYS_RES_MEMORY,
 		    sc->reg_res_id, sc->reg_res);
 	}
+	DPRINTF("Saindo....2");
 	return (ENXIO);
 }
 
@@ -1025,6 +1078,7 @@ mrsas_ich_startup(void *arg)
 	int i = 0;
 	struct mrsas_softc *sc = (struct mrsas_softc *)arg;
 
+	DPRINTF("status 0x%x", mrsas_read_reg(sc, offsetof(mrsas_reg_set, outbound_intr_status)));
 	/*
 	 * Intialize a counting Semaphore to take care no. of concurrent IOCTLs
 	 */
@@ -1051,6 +1105,7 @@ mrsas_ich_startup(void *arg)
 	if (device_get_unit(sc->mrsas_dev) == 0)
 		memset(&mrsas_mgmt_info, 0, sizeof(mrsas_mgmt_info));
 
+	DPRINTF("1");
 	mrsas_mgmt_info.count++;
 	mrsas_mgmt_info.sc_ptr[mrsas_mgmt_info.max_index] = sc;
 	mrsas_mgmt_info.max_index++;
@@ -1058,12 +1113,14 @@ mrsas_ich_startup(void *arg)
 	/* Enable Interrupts */
 	mrsas_enable_intr(sc);
 
+	DPRINTF("status 0x%x", mrsas_read_reg(sc, offsetof(mrsas_reg_set, outbound_intr_status)));
 	/* Call DCMD get_pd_info for all system PDs */
 	for (i = 0; i < MRSAS_MAX_PD; i++) {
 		if ((sc->target_list[i].target_id != 0xffff) &&
 			sc->pd_info_mem)
 			mrsas_get_pd_info(sc, sc->target_list[i].target_id);
 	}
+	DPRINTF("2");
 
 	/* Initiate AEN (Asynchronous Event Notification) */
 	if (mrsas_start_aen(sc)) {
@@ -1078,6 +1135,7 @@ mrsas_ich_startup(void *arg)
 		config_intrhook_disestablish(&sc->mrsas_ich);
 		sc->mrsas_ich.ich_arg = NULL;
 	}
+	DPRINTF("4");
 }
 
 /*
@@ -1594,9 +1652,10 @@ mrsas_poll(struct cdev *dev, int poll_events, struct thread *td)
 static int
 mrsas_setup_irq(struct mrsas_softc *sc)
 {
-	if (sc->msix_enable && (mrsas_setup_msix(sc) == SUCCESS))
+	DPRINTF("sc->msix_enable %u", sc->msix_enable);
+	if (sc->msix_enable && (mrsas_setup_msix(sc) == SUCCESS)) {
 		device_printf(sc->mrsas_dev, "MSI-x interrupts setup success\n");
-
+	}
 	else {
 		device_printf(sc->mrsas_dev, "Fall back to legacy interrupt\n");
 		sc->irq_context[0].sc = sc;
@@ -1649,6 +1708,7 @@ mrsas_isr(void *arg)
 		mrsas_clear_intr(sc);
 		return;
 	}
+	//DPRINTF("MSIxIndex: 0x%x", irq_context->MSIxIndex);
 	/* Process for reply request and clear response interrupt */
 	if (mrsas_complete_cmd(sc, irq_context->MSIxIndex) != SUCCESS)
 		mrsas_clear_intr(sc);
@@ -1699,12 +1759,13 @@ mrsas_complete_cmd(struct mrsas_softc *sc, u_int32_t MSIxIndex)
 
 	desc_val.word = desc->Words;
 	num_completed = 0;
+	//DPRINTF("desc %p MSIxIndex 0x%x desc_val.u.low 0x%x desc_val.u.high 0x%x\n", desc, MSIxIndex, desc_val.u.low, desc_val.u.high); 
 
 	reply_descript_type = reply_desc->ReplyFlags & MPI2_RPY_DESCRIPT_FLAGS_TYPE_MASK;
 
 	/* Find our reply descriptor for the command and process */
 	while ((desc_val.u.low != 0xFFFFFFFF) && (desc_val.u.high != 0xFFFFFFFF)) {
-		smid = reply_desc->SMID;
+		smid = le16toh(reply_desc->SMID);
 		cmd_mpt = sc->mpt_cmd_list[smid - 1];
 		scsi_io_req = (MRSAS_RAID_SCSI_IO_REQUEST *) cmd_mpt->io_request;
 
@@ -1712,6 +1773,7 @@ mrsas_complete_cmd(struct mrsas_softc *sc, u_int32_t MSIxIndex)
 		extStatus = scsi_io_req->RaidContext.raid_context.exStatus;
 		sense = cmd_mpt->sense;
 		data_length = scsi_io_req->DataLength;
+	  //DPRINTF("smid 0x%x, data_length 0x%x scsi_io_req->Function 0x%x", smid, le32toh(data_length), scsi_io_req->Function);
 
 		switch (scsi_io_req->Function) {
 		case MPI2_FUNCTION_SCSI_TASK_MGMT:
@@ -1736,7 +1798,7 @@ mrsas_complete_cmd(struct mrsas_softc *sc, u_int32_t MSIxIndex)
 		case MRSAS_MPI2_FUNCTION_LD_IO_REQUEST:
 			if (cmd_mpt->r1_alt_dev_handle == MR_DEVHANDLE_INVALID) {
 				mrsas_map_mpt_cmd_status(cmd_mpt, cmd_mpt->ccb_ptr, status,
-				    extStatus, data_length, sense);
+				    extStatus, le32toh(data_length), sense);
 				mrsas_cmd_done(sc, cmd_mpt);
 				mrsas_atomic_dec(&sc->fw_outstanding);
 			} else {
@@ -1764,7 +1826,7 @@ mrsas_complete_cmd(struct mrsas_softc *sc, u_int32_t MSIxIndex)
 					mrsas_release_mpt_cmd(r1_cmd);
 					mrsas_atomic_dec(&sc->fw_outstanding);
 					mrsas_map_mpt_cmd_status(cmd_mpt, cmd_mpt->ccb_ptr, status,
-					    extStatus, data_length, sense);
+					    extStatus, le32toh(data_length), sense);
 					mrsas_cmd_done(sc, cmd_mpt);
 					mrsas_atomic_dec(&sc->fw_outstanding);
 				}
@@ -1778,7 +1840,7 @@ mrsas_complete_cmd(struct mrsas_softc *sc, u_int32_t MSIxIndex)
 			 * And also make sure that the issue_polled call should only be
 			 * used if INTERRUPT IS DISABLED.
 			 */
-			if (cmd_mfi->frame->hdr.flags & MFI_FRAME_DONT_POST_IN_REPLY_QUEUE)
+			if (cmd_mfi->frame->hdr.flags & htole16(MFI_FRAME_DONT_POST_IN_REPLY_QUEUE))
 				mrsas_release_mfi_cmd(cmd_mfi);
 			else
 				mrsas_complete_mptmfi_passthru(sc, cmd_mfi, status);
@@ -2354,11 +2416,14 @@ mrsas_init_fw(struct mrsas_softc *sc)
 	int fw_msix_count = 0;
 	int i, j;
 
+	DPRINTF("enter");
 	/* Make sure Firmware is ready */
 	ret = mrsas_transition_to_ready(sc, ocr);
 	if (ret != SUCCESS) {
 		return (ret);
 	}
+	DPRINTF("sc->is_ventura = 0x%08x, sc->is_aero = 0x%08x", sc->is_ventura, sc->is_aero);
+
 	if (sc->is_ventura || sc->is_aero) {
 		scratch_pad_3 = mrsas_read_reg_with_retries(sc, offsetof(mrsas_reg_set, outbound_scratch_pad_3));
 #if VD_EXT_DEBUG
@@ -2373,6 +2438,7 @@ mrsas_init_fw(struct mrsas_softc *sc)
 	/* Check if MSI-X is supported while in ready state */
 	msix_enable = (mrsas_read_reg_with_retries(sc, offsetof(mrsas_reg_set, outbound_scratch_pad)) & 0x4000000) >> 0x1a;
 
+	DPRINTF("msix_enable = 0x%08x", msix_enable);
 	if (msix_enable) {
 		scratch_pad_2 = mrsas_read_reg_with_retries(sc, offsetof(mrsas_reg_set,
 		    outbound_scratch_pad_2));
@@ -2392,6 +2458,7 @@ mrsas_init_fw(struct mrsas_softc *sc)
 			if ((sc->mrsas_gen3_ctrl && (sc->msix_vectors > 8)) ||
 				((sc->is_ventura || sc->is_aero) && (sc->msix_vectors > 16)))
 				sc->msix_combined = true;
+	    DPRINTF("fw_msix_count = 0x%08x, sc->msix_combined 0x%x", fw_msix_count, sc->msix_combined);
 			/*
 			 * Save 1-15 reply post index
 			 * address to local memory Index 0
@@ -2428,6 +2495,7 @@ mrsas_init_fw(struct mrsas_softc *sc)
 		sc->msix_reg_offset[0] =
 		    MPI2_SUP_REPLY_POST_HOST_INDEX_OFFSET;
 	}
+
 	if (mrsas_init_adapter(sc) != SUCCESS) {
 		device_printf(sc->mrsas_dev, "Adapter initialize Fail.\n");
 		return (1);
@@ -2460,6 +2528,7 @@ mrsas_init_fw(struct mrsas_softc *sc)
 		device_printf(sc->mrsas_dev, "Unable to get FW ctrl_info.\n");
 		return (1);
 	}
+
 	sc->secure_jbod_support =
 	    (u_int8_t)sc->ctrl_info->adapterOperations3.supportSecurityonJBOD;
 
@@ -2477,6 +2546,7 @@ mrsas_init_fw(struct mrsas_softc *sc)
 		    "There seems to be some problem in the controller\n"
 		    "Please contact to the SUPPORT TEAM if the problem persists\n");
 	}
+
 	megasas_setup_jbod_map(sc);
 
 	memset(sc->target_list, 0,
@@ -2540,6 +2610,7 @@ mrsas_init_fw(struct mrsas_softc *sc)
 	if (tmp_sectors && (sc->max_sectors_per_req > tmp_sectors))
 		sc->max_sectors_per_req = tmp_sectors;
 
+	DPRINTF("sc->max_sectors_per_reqs 0x%x", sc->max_sectors_per_req);
 	sc->disableOnlineCtrlReset =
 	    sc->ctrl_info->properties.OnOffProperties.disableOnlineCtrlReset;
 	sc->UnevenSpanSupport =
@@ -2556,6 +2627,11 @@ mrsas_init_fw(struct mrsas_softc *sc)
 		
 	device_printf(sc->mrsas_dev, "max_fw_cmds: %u  max_scsi_cmds: %u\n",
 		sc->max_fw_cmds, sc->max_scsi_cmds);
+
+	mtx_lock(&sc->sim_lock);
+	DPRINTF("status 0x%x", mrsas_read_reg(sc, offsetof(mrsas_reg_set, outbound_intr_status)));
+	mtx_unlock(&sc->sim_lock);
+
 	return (0);
 }
 
@@ -2584,6 +2660,7 @@ mrsas_init_adapter(struct mrsas_softc *sc)
 	/* Decrement the max supported by 1, to correlate with FW */
 	sc->max_fw_cmds = sc->max_fw_cmds - 1;
 	sc->max_scsi_cmds = sc->max_fw_cmds - MRSAS_MAX_MFI_CMDS;
+	DPRINTF("sc->max_fw_cmds = 0x%08x, sc->max_scsi_cmds = 0x%08x", sc->max_fw_cmds,sc->max_scsi_cmds);
 
 	/* Determine allocation size of command frames */
 	sc->reply_q_depth = ((sc->max_fw_cmds + 1 + 15) / 16 * 16) * 2;
@@ -2593,6 +2670,9 @@ mrsas_init_adapter(struct mrsas_softc *sc)
 	    (MRSAS_MPI2_RAID_DEFAULT_IO_FRAME_SIZE * (sc->max_fw_cmds + 1));
 	scratch_pad_2 = mrsas_read_reg_with_retries(sc, offsetof(mrsas_reg_set,
 	    outbound_scratch_pad_2));
+
+  mrsas_dprint(sc, MRSAS_INFO, "%s: sc->reply_q_depth 0x%x, sc->request_alloc_sz 0x%x, sc->reply_alloc_sz 0x%x, sc->io_frames_alloc_sz 0x%x\n", __func__, sc->reply_q_depth, sc->request_alloc_sz, sc->reply_alloc_sz, sc->io_frames_alloc_sz);
+
 	/*
 	 * If scratch_pad_2 & MEGASAS_MAX_CHAIN_SIZE_UNITS_MASK is set,
 	 * Firmware support extended IO chain frame which is 4 time more
@@ -2617,8 +2697,8 @@ mrsas_init_adapter(struct mrsas_softc *sc)
 
 	mrsas_dprint(sc, MRSAS_INFO,
 	    "max sge: 0x%x, max chain frame size: 0x%x, "
-	    "max fw cmd: 0x%x\n", sc->max_num_sge,
-	    sc->max_chain_frame_sz, sc->max_fw_cmds);
+	    "max fw cmd: 0x%x sc->chain_frames_alloc_sz: 0x%x\n", sc->max_num_sge,
+	    sc->max_chain_frame_sz, sc->max_fw_cmds, sc->chain_frames_alloc_sz);
 
 	/* Used for pass thru MFI frame (DCMD) */
 	sc->chain_offset_mfi_pthru = offsetof(MRSAS_RAID_SCSI_IO_REQUEST, SGL) / 16;
@@ -2626,6 +2706,7 @@ mrsas_init_adapter(struct mrsas_softc *sc)
 	sc->chain_offset_io_request = (MRSAS_MPI2_RAID_DEFAULT_IO_FRAME_SIZE -
 	    sizeof(MPI2_SGE_IO_UNION)) / 16;
 
+	mrsas_dprint(sc, MRSAS_INFO, "%s: sc->chain_offset_mfi_pthru 0x%x, sc->chain_offset_io_request 0x%x\n", __func__, sc->chain_offset_mfi_pthru, sc->chain_offset_io_request);
 	int count = sc->msix_vectors > 0 ? sc->msix_vectors : 1;
 
 	for (i = 0; i < count; i++)
@@ -2738,43 +2819,59 @@ mrsas_ioc_init(struct mrsas_softc *sc)
 	IOCInitMsg = (pMpi2IOCInitRequest_t)(((char *)sc->ioc_init_mem) + 1024);
 	IOCInitMsg->Function = MPI2_FUNCTION_IOC_INIT;
 	IOCInitMsg->WhoInit = MPI2_WHOINIT_HOST_DRIVER;
-	IOCInitMsg->MsgVersion = MPI2_VERSION;
-	IOCInitMsg->HeaderVersion = MPI2_HEADER_VERSION;
-	IOCInitMsg->SystemRequestFrameSize = MRSAS_MPI2_RAID_DEFAULT_IO_FRAME_SIZE / 4;
-	IOCInitMsg->ReplyDescriptorPostQueueDepth = sc->reply_q_depth;
-	IOCInitMsg->ReplyDescriptorPostQueueAddress = sc->reply_desc_phys_addr;
-	IOCInitMsg->SystemRequestFrameBaseAddress = sc->io_request_phys_addr;
+	IOCInitMsg->MsgVersion = htole16(MPI2_VERSION);
+	IOCInitMsg->HeaderVersion = htole16(MPI2_HEADER_VERSION);
+	IOCInitMsg->SystemRequestFrameSize = htole16(MRSAS_MPI2_RAID_DEFAULT_IO_FRAME_SIZE / 4);
+	DPRINTF("0x%08x, 0x%08x, 0x%08x, 0x%08x, 0x%08x,0x%08x,", MPI2_VERSION, MPI2_HEADER_VERSION, IOCInitMsg->MsgVersion, IOCInitMsg->HeaderVersion, MRSAS_MPI2_RAID_DEFAULT_IO_FRAME_SIZE / 4, IOCInitMsg->SystemRequestFrameSize);
+	IOCInitMsg->ReplyDescriptorPostQueueDepth = htole16(sc->reply_q_depth);
+	IOCInitMsg->ReplyDescriptorPostQueueAddress = htole64(sc->reply_desc_phys_addr);
+	IOCInitMsg->SystemRequestFrameBaseAddress = htole64(sc->io_request_phys_addr);
 	IOCInitMsg->HostMSIxVectors = (sc->msix_vectors > 0 ? sc->msix_vectors : 0);
 	IOCInitMsg->HostPageSize = MR_DEFAULT_NVME_PAGE_SHIFT;
 
 	init_frame = (struct mrsas_init_frame *)sc->ioc_init_mem;
 	init_frame->cmd = MFI_CMD_INIT;
 	init_frame->cmd_status = 0xFF;
-	init_frame->flags |= MFI_FRAME_DONT_POST_IN_REPLY_QUEUE;
+	init_frame->flags |= htole16(MFI_FRAME_DONT_POST_IN_REPLY_QUEUE);
 
 	/* driver support Extended MSIX */
 	if (sc->mrsas_gen3_ctrl || sc->is_ventura || sc->is_aero) {
 		init_frame->driver_operations.
 		    mfi_capabilities.support_additional_msix = 1;
 	}
+	//DPRINTF("verbuf_phys_addr: 0x%016lx, ioc_init_phys_mem: 0x%016lx, 0x%016lx , req_desc.addr.Words: 0x%016lx, phys_addr: 0x%016lx, sc->ioc_init_mem: 0x%016lx, &init_frame = %p  \n", sc->verbuf_phys_addr, sc->ioc_init_phys_mem, (bus_addr_t)sc->ioc_init_phys_mem, sizeof(req_desc.addr.Words), sizeof(phys_addr), (bus_addr_t)sc->ioc_init_mem,(struct mrsas_init_frame *) &init_frame);
+	DPRINTF("sc->ioc_init_mem 0x%016lx, %p, %p  \n", (bus_addr_t)sc->ioc_init_mem, (struct mrsas_init_frame *) sc->ioc_init_mem , (struct mrsas_init_frame *)init_frame);
 	if (sc->verbuf_mem) {
 		snprintf((char *)sc->verbuf_mem, strlen(MRSAS_VERSION) + 2, "%s\n",
 		    MRSAS_VERSION);
 		init_frame->driver_ver_lo = (bus_addr_t)sc->verbuf_phys_addr;
 		init_frame->driver_ver_hi = 0;
 	}
+	DPRINTF("sc->verbuf_phys_addr 0x%016lx, 0x%08x  \n", (bus_addr_t)sc->verbuf_phys_addr, init_frame->driver_ver_lo );
 	init_frame->driver_operations.mfi_capabilities.support_ndrive_r1_lb = 1;
 	init_frame->driver_operations.mfi_capabilities.support_max_255lds = 1;
 	init_frame->driver_operations.mfi_capabilities.security_protocol_cmds_fw = 1;
 	if (sc->max_chain_frame_sz > MEGASAS_CHAIN_FRAME_SZ_MIN)
 		init_frame->driver_operations.mfi_capabilities.support_ext_io_size = 1;
-	phys_addr = (bus_addr_t)sc->ioc_init_phys_mem + 1024;
-	init_frame->queue_info_new_phys_addr_lo = phys_addr;
-	init_frame->data_xfer_len = sizeof(Mpi2IOCInitRequest_t);
 
-	req_desc.addr.Words = (bus_addr_t)sc->ioc_init_phys_mem;
+	DPRINTF("mfi_capabilities-0 0x%08x \n", init_frame->driver_operations.reg);
+	init_frame->driver_operations.reg = htole32(init_frame->driver_operations.reg);
+
+	DPRINTF("mfi_capabilities-1 0x%08x \n",  init_frame->driver_operations.reg);
+	phys_addr = (bus_addr_t)sc->ioc_init_phys_mem + 1024;
+	init_frame->queue_info_new_phys_addr_lo = htole32(phys_addr);
+	init_frame->data_xfer_len = htole32(sizeof(Mpi2IOCInitRequest_t));
+	DPRINTF("init_frame->data_xfer_len 0x%x\n",  init_frame->data_xfer_len); 
+	DPRINTF("sc->ioc_init_phys_mem 0x%016lx, 0x%016lx \n",  (bus_addr_t)sc->ioc_init_phys_mem, (bus_addr_t)sc->ioc_init_phys_mem + 1024);
+	DPRINTF("phys_addr 0x%016lx, 0x%08x, 0x%08x  \n",  (bus_addr_t)phys_addr, init_frame->queue_info_new_phys_addr_lo, init_frame->queue_info_new_phys_addr_hi );
+
+	req_desc.addr.u.low = htole32((bus_addr_t)sc->ioc_init_phys_mem & 0xFFFFFFFF);
+	req_desc.addr.u.high = htole32(((bus_addr_t)sc->ioc_init_phys_mem >> 32) & 0xFFFFFFFF);
+
 	req_desc.MFAIo.RequestFlags =
 	    (MRSAS_REQ_DESCRIPT_FLAGS_MFA << MRSAS_REQ_DESCRIPT_FLAGS_TYPE_SHIFT);
+
+	DPRINTF("0x%016lx, 0x%08x, 0x%08x, 0x%016lx, 0x%08lx,0x%08x",  (bus_addr_t)sc->ioc_init_phys_mem, req_desc.addr.u.low, req_desc.addr.u.high, req_desc.addr.Words, sizeof(req_desc), 0);
 
 	mrsas_disable_intr(sc);
 	mrsas_dprint(sc, MRSAS_OCR, "Issuing IOC INIT command to FW.\n");
@@ -2923,9 +3020,9 @@ mrsas_write_64bit_req_desc(struct mrsas_softc *sc, u_int32_t req_desc_lo,
 {
 	mtx_lock(&sc->pci_lock);
 	mrsas_write_reg(sc, offsetof(mrsas_reg_set, inbound_low_queue_port),
-	    req_desc_lo);
+	    le32toh(req_desc_lo));
 	mrsas_write_reg(sc, offsetof(mrsas_reg_set, inbound_high_queue_port),
-	    req_desc_hi);
+	    le32toh(req_desc_hi));
 	mtx_unlock(&sc->pci_lock);
 }
 
@@ -2944,7 +3041,7 @@ mrsas_fire_cmd(struct mrsas_softc *sc, u_int32_t req_desc_lo,
 {
 	if (sc->atomic_desc_support)
 		mrsas_write_reg(sc, offsetof(mrsas_reg_set, inbound_single_queue_port),
-		    req_desc_lo);
+		    le32toh(req_desc_lo));
 	else
 		mrsas_write_64bit_req_desc(sc, req_desc_lo, req_desc_hi);
 }
@@ -2967,6 +3064,7 @@ mrsas_transition_to_ready(struct mrsas_softc *sc, int ocr)
 	u_int32_t cur_state;
 	u_int32_t abs_state, curr_abs_state;
 
+	DPRINTF("enter");
 	val = mrsas_read_reg_with_retries(sc, offsetof(mrsas_reg_set, outbound_scratch_pad));
 	fw_state = val & MFI_STATE_MASK;
 	max_wait = MRSAS_RESET_WAIT_TIME;
@@ -2976,6 +3074,7 @@ mrsas_transition_to_ready(struct mrsas_softc *sc, int ocr)
 
 	while (fw_state != MFI_STATE_READY) {
 		abs_state = mrsas_read_reg_with_retries(sc, offsetof(mrsas_reg_set, outbound_scratch_pad));
+	  DPRINTF("fw_state 0x%x",  fw_state);
 		switch (fw_state) {
 		case MFI_STATE_FAULT:
 			device_printf(sc->mrsas_dev, "FW is in FAULT state!!\n");
@@ -3099,14 +3198,14 @@ mrsas_ocr_thread(void *arg)
 	struct mrsas_softc *sc;
 	u_int32_t fw_status, fw_state;
 	u_int8_t tm_target_reset_failed = 0;
+	u_int32_t abs_state;
 
 	sc = (struct mrsas_softc *)arg;
-
-	mrsas_dprint(sc, MRSAS_TRACE, "%s\n", __func__);
 
 	sc->ocr_thread_active = 1;
 	mtx_lock(&sc->sim_lock);
 	for (;;) {
+
 		/* Sleep for 1 second and check the queue status */
 		msleep(&sc->ocr_chan, &sc->sim_lock, PRIBIO,
 		    "mrsas_ocr", sc->mrsas_fw_fault_check_delay * hz);
@@ -3120,6 +3219,7 @@ mrsas_ocr_thread(void *arg)
 		}
 		fw_status = mrsas_read_reg_with_retries(sc,
 		    offsetof(mrsas_reg_set, outbound_scratch_pad));
+		//DPRINTF("fw_status 0x%x",  fw_status);
 		fw_state = fw_status & MFI_STATE_MASK;
 		if (fw_state == MFI_STATE_FAULT || sc->do_timedout_reset ||
 			mrsas_atomic_read(&sc->target_reset_outstanding)) {
@@ -3148,10 +3248,16 @@ mrsas_ocr_thread(void *arg)
 				if (tm_target_reset_failed)
 					device_printf(sc->mrsas_dev, "Initiaiting OCR because of "
 					    "TM FAILURE!\n");
-				else
+				else {
 					device_printf(sc->mrsas_dev, "Initiaiting OCR "
 						"because of %s!\n", sc->do_timedout_reset ?
 						"DCMD IO Timeout" : "FW fault");
+		      abs_state = mrsas_read_reg_with_retries(sc, offsetof(mrsas_reg_set, outbound_scratch_pad));
+			    device_printf(sc->mrsas_dev, 
+			        "FW in FAULT state Fault code:0x%x subcode:0x%x func:%s\n",
+				      abs_state & MFI_STATE_FAULT_CODE,
+				      abs_state & MFI_STATE_FAULT_SUBCODE, __func__);
+				}
 
 				mtx_lock_spin(&sc->ioctl_lock);
 				sc->reset_in_progress = 1;
@@ -3238,12 +3344,14 @@ mrsas_reset_ctrl(struct mrsas_softc *sc, u_int8_t reset_reason)
 		    "mrsas: Hardware critical error, returning FAIL.\n");
 		return FAIL;
 	}
+	DPRINTF("0");
 	mrsas_set_bit(MRSAS_FUSION_IN_RESET, &sc->reset_flags);
 	sc->adprecovery = MRSAS_ADPRESET_SM_INFAULT;
 	mrsas_disable_intr(sc);
 	msleep(&sc->ocr_chan, &sc->sim_lock, PRIBIO, "mrsas_ocr",
 	    sc->mrsas_fw_fault_check_delay * hz);
 
+	DPRINTF("1");
 	/* First try waiting for commands to complete */
 	if (mrsas_wait_for_outstanding(sc, reset_reason)) {
 		mrsas_dprint(sc, MRSAS_OCR,
@@ -3289,6 +3397,7 @@ mrsas_reset_ctrl(struct mrsas_softc *sc, u_int8_t reset_reason)
 			goto out;
 		}
 		/* Now try to reset the chip */
+	DPRINTF("2");
 		for (i = 0; i < MRSAS_FUSION_MAX_RESET_TRIES; i++) {
 			mrsas_write_reg(sc, offsetof(mrsas_reg_set, fusion_seq_offset),
 			    MPI2_WRSEQ_FLUSH_KEY_VALUE);
@@ -3516,6 +3625,7 @@ mrsas_wait_for_outstanding(struct mrsas_softc *sc, u_int8_t check_reason)
 	int i, outstanding, retval = 0;
 	u_int32_t fw_state, count, MSIxIndex;
 
+	//DPRINTF("0");
 	for (i = 0; i < MRSAS_RESET_WAIT_TIME; i++) {
 		if (sc->remove_in_progress) {
 			mrsas_dprint(sc, MRSAS_OCR,
@@ -3613,6 +3723,10 @@ mrsas_release_mfi_cmd(struct mrsas_mfi_cmd *cmd_mfi)
  * information is mainly used to find out the maximum IO transfer per command
  * supported by the FW.
  */
+
+#define le32_to_cpus(x) do { *((u_int32_t *)(x)) = le32toh((*(u_int32_t *)x)); } while (0)
+#define le16_to_cpus(x) do { *((u_int16_t *)(x)) = le16toh((*(u_int16_t *)x)); } while (0)
+
 static int
 mrsas_get_ctrl_info(struct mrsas_softc *sc)
 {
@@ -3636,17 +3750,19 @@ mrsas_get_ctrl_info(struct mrsas_softc *sc)
 	}
 	memset(dcmd->mbox.b, 0, MFI_MBOX_SIZE);
 
+	DPRINTF("sizeof(struct mrsas_ctrl_info) 0x%lx",  sizeof(struct mrsas_ctrl_info));
 	dcmd->cmd = MFI_CMD_DCMD;
 	dcmd->cmd_status = 0xFF;
 	dcmd->sge_count = 1;
 	dcmd->flags = MFI_FRAME_DIR_READ;
 	dcmd->timeout = 0;
 	dcmd->pad_0 = 0;
-	dcmd->data_xfer_len = sizeof(struct mrsas_ctrl_info);
-	dcmd->opcode = MR_DCMD_CTRL_GET_INFO;
-	dcmd->sgl.sge32[0].phys_addr = sc->ctlr_info_phys_addr;
-	dcmd->sgl.sge32[0].length = sizeof(struct mrsas_ctrl_info);
+	dcmd->data_xfer_len = htole32(sizeof(struct mrsas_ctrl_info));
+	dcmd->opcode = htole32(MR_DCMD_CTRL_GET_INFO);
+	dcmd->sgl.sge32[0].phys_addr = htole32(sc->ctlr_info_phys_addr & 0xFFFFFFFF);
+	dcmd->sgl.sge32[0].length = htole32(sizeof(struct mrsas_ctrl_info));
 
+	DPRINTF("sc->mask_interrupts = %d",  sc->mask_interrupts);
 	if (!sc->mask_interrupts)
 		retcode = mrsas_issue_blocked_cmd(sc, cmd);
 	else
@@ -3654,8 +3770,23 @@ mrsas_get_ctrl_info(struct mrsas_softc *sc)
 
 	if (retcode == ETIMEDOUT)
 		goto dcmd_timeout;
-	else
+	else {
+	  DPRINTF("sc->ctrl_info->properties.OnOffProperties %p ",  &sc->ctrl_info->properties.OnOffProperties);
 		memcpy(sc->ctrl_info, sc->ctlr_info_mem, sizeof(struct mrsas_ctrl_info));
+		DPRINTF("--------------------------------------------------\n");
+	  DPRINTF("sc->ctrl_info->properties.OnOffProperties 0x%x ",  *((u_int32_t *)(&(sc->ctrl_info->properties.OnOffProperties))));
+   DPRINTF("sc->ctrl_info->adapterOperations2 0x%x ",  *((u_int32_t *)(&(sc->ctrl_info->adapterOperations2))));
+   DPRINTF("sc->ctrl_info->adapterOperations3 0x%x ",  *((u_int32_t *)(&(sc->ctrl_info->adapterOperations3))));
+   DPRINTF("sc->ctrl_info->adapterOperations4 0x%x ",  *((u_int16_t *)(&(sc->ctrl_info->adapterOperations4))));
+		le32_to_cpus(&sc->ctrl_info->properties.OnOffProperties);
+		le32_to_cpus(&sc->ctrl_info->adapterOperations2);
+		le32_to_cpus(&sc->ctrl_info->adapterOperations3);
+		le16_to_cpus(&sc->ctrl_info->adapterOperations4);
+	  DPRINTF("sc->ctrl_info->properties.OnOffProperties 0x%x ",  *((u_int32_t *)(&(sc->ctrl_info->properties.OnOffProperties))));
+   DPRINTF("sc->ctrl_info->adapterOperations2 0x%x ",  *((u_int32_t *)(&(sc->ctrl_info->adapterOperations2))));
+   DPRINTF("sc->ctrl_info->adapterOperations3 0x%x ",  *((u_int32_t *)(&(sc->ctrl_info->adapterOperations3))));
+   DPRINTF("sc->ctrl_info->adapterOperations4 0x%x ",  *((u_int16_t *)(&(sc->ctrl_info->adapterOperations4))));
+	}
 
 	do_ocr = 0;
 	mrsas_update_ext_vd_details(sc);
@@ -3813,7 +3944,7 @@ mrsas_issue_polled(struct mrsas_softc *sc, struct mrsas_mfi_cmd *cmd)
 	int i, retcode = SUCCESS;
 
 	frame_hdr->cmd_status = 0xFF;
-	frame_hdr->flags |= MFI_FRAME_DONT_POST_IN_REPLY_QUEUE;
+	frame_hdr->flags |= htole16(MFI_FRAME_DONT_POST_IN_REPLY_QUEUE);
 
 	/* Issue the frame using inbound queue port */
 	if (mrsas_issue_dcmd(sc, cmd)) {
@@ -3892,7 +4023,7 @@ mrsas_build_mpt_cmd(struct mrsas_softc *sc, struct mrsas_mfi_cmd *cmd)
 	req_desc->addr.Words = 0;
 	req_desc->SCSIIO.RequestFlags = (MPI2_REQ_DESCRIPT_FLAGS_SCSI_IO << MRSAS_REQ_DESCRIPT_FLAGS_TYPE_SHIFT);
 
-	req_desc->SCSIIO.SMID = index;
+	req_desc->SCSIIO.SMID = htole16(index);
 
 	return (req_desc);
 }
@@ -3927,7 +4058,7 @@ mrsas_build_mptmfi_passthru(struct mrsas_softc *sc, struct mrsas_mfi_cmd *mfi_cm
 	 * mrsas_complete_cmd.
 	 */
 
-	if (frame_hdr->flags & MFI_FRAME_DONT_POST_IN_REPLY_QUEUE)
+	if (frame_hdr->flags & htole16(MFI_FRAME_DONT_POST_IN_REPLY_QUEUE))
 		mpt_cmd->flags = MFI_FRAME_DONT_POST_IN_REPLY_QUEUE;
 
 	io_req = mpt_cmd->io_request;
@@ -3944,12 +4075,12 @@ mrsas_build_mptmfi_passthru(struct mrsas_softc *sc, struct mrsas_mfi_cmd *mfi_cm
 	io_req->SGLOffset0 = offsetof(MRSAS_RAID_SCSI_IO_REQUEST, SGL) / 4;
 	io_req->ChainOffset = sc->chain_offset_mfi_pthru;
 
-	mpi25_ieee_chain->Address = mfi_cmd->frame_phys_addr;
+	mpi25_ieee_chain->Address = htole64(mfi_cmd->frame_phys_addr);
 
 	mpi25_ieee_chain->Flags = IEEE_SGE_FLAGS_CHAIN_ELEMENT |
 	    MPI2_IEEE_SGE_FLAGS_IOCPLBNTA_ADDR;
 
-	mpi25_ieee_chain->Length = sc->max_chain_frame_sz;
+	mpi25_ieee_chain->Length = htole32(sc->max_chain_frame_sz);
 
 	return (0);
 }
@@ -4100,7 +4231,7 @@ mrsas_complete_mptmfi_passthru(struct mrsas_softc *sc, struct mrsas_mfi_cmd *cmd
 			break;
 		}
 		/* See if got an event notification */
-		if (cmd->frame->dcmd.opcode == MR_DCMD_CTRL_EVENT_WAIT)
+		if (le32toh(cmd->frame->dcmd.opcode) == MR_DCMD_CTRL_EVENT_WAIT)
 			mrsas_complete_aen(sc, cmd);
 		else
 			mrsas_wakeup(sc, cmd);
@@ -4264,14 +4395,14 @@ megasas_sync_pd_seq_num(struct mrsas_softc *sc, boolean_t pend)
 	dcmd->sge_count = 1;
 	dcmd->timeout = 0;
 	dcmd->pad_0 = 0;
-	dcmd->data_xfer_len = (pd_seq_map_sz);
-	dcmd->opcode = (MR_DCMD_SYSTEM_PD_MAP_GET_INFO);
-	dcmd->sgl.sge32[0].phys_addr = (pd_seq_h);
-	dcmd->sgl.sge32[0].length = (pd_seq_map_sz);
+	dcmd->data_xfer_len = htole32(pd_seq_map_sz);
+	dcmd->opcode = htole32(MR_DCMD_SYSTEM_PD_MAP_GET_INFO);
+	dcmd->sgl.sge32[0].phys_addr = htole32(pd_seq_h & 0xFFFFFFFF);
+	dcmd->sgl.sge32[0].length = htole32(pd_seq_map_sz);
 
 	if (pend) {
 		dcmd->mbox.b[0] = MRSAS_DCMD_MBOX_PEND_FLAG;
-		dcmd->flags = (MFI_FRAME_DIR_WRITE);
+		dcmd->flags = htole16(MFI_FRAME_DIR_WRITE);
 		sc->jbod_seq_cmd = cmd;
 		if (mrsas_issue_dcmd(sc, cmd)) {
 			device_printf(sc->mrsas_dev,
@@ -4280,13 +4411,13 @@ megasas_sync_pd_seq_num(struct mrsas_softc *sc, boolean_t pend)
 		} else
 			return 0;
 	} else
-		dcmd->flags = MFI_FRAME_DIR_READ;
+		dcmd->flags = htole16(MFI_FRAME_DIR_READ);
 
 	retcode = mrsas_issue_polled(sc, cmd);
 	if (retcode == ETIMEDOUT)
 		goto dcmd_timeout;
 
-	if (pd_sync->count > MAX_PHYSICAL_DEVICES) {
+	if (le32toh(pd_sync->count) > MAX_PHYSICAL_DEVICES) {
 		device_printf(sc->mrsas_dev,
 		    "driver supports max %d JBOD, but FW reports %d\n",
 		    MAX_PHYSICAL_DEVICES, pd_sync->count);
@@ -4364,13 +4495,13 @@ mrsas_get_ld_map_info(struct mrsas_softc *sc)
 	dcmd->cmd = MFI_CMD_DCMD;
 	dcmd->cmd_status = 0xFF;
 	dcmd->sge_count = 1;
-	dcmd->flags = MFI_FRAME_DIR_READ;
+	dcmd->flags = htole16(MFI_FRAME_DIR_READ);
 	dcmd->timeout = 0;
 	dcmd->pad_0 = 0;
-	dcmd->data_xfer_len = sc->current_map_sz;
-	dcmd->opcode = MR_DCMD_LD_MAP_GET_INFO;
-	dcmd->sgl.sge32[0].phys_addr = map_phys_addr;
-	dcmd->sgl.sge32[0].length = sc->current_map_sz;
+	dcmd->data_xfer_len = htole32(sc->current_map_sz);
+	dcmd->opcode = htole32(MR_DCMD_LD_MAP_GET_INFO);
+	dcmd->sgl.sge32[0].phys_addr = htole32(map_phys_addr & 0xFFFFFFFF);
+	dcmd->sgl.sge32[0].length = htole32(sc->current_map_sz);
 
 	retcode = mrsas_issue_polled(sc, cmd);
 	if (retcode == ETIMEDOUT)
@@ -4427,15 +4558,15 @@ mrsas_sync_map_info(struct mrsas_softc *sc)
 	dcmd->cmd = MFI_CMD_DCMD;
 	dcmd->cmd_status = 0xFF;
 	dcmd->sge_count = 1;
-	dcmd->flags = MFI_FRAME_DIR_WRITE;
+	dcmd->flags = htole16(MFI_FRAME_DIR_WRITE);
 	dcmd->timeout = 0;
 	dcmd->pad_0 = 0;
-	dcmd->data_xfer_len = sc->current_map_sz;
+	dcmd->data_xfer_len = htole32(sc->current_map_sz);
 	dcmd->mbox.b[0] = num_lds;
 	dcmd->mbox.b[1] = MRSAS_DCMD_MBOX_PEND_FLAG;
-	dcmd->opcode = MR_DCMD_LD_MAP_GET_INFO;
-	dcmd->sgl.sge32[0].phys_addr = map_phys_addr;
-	dcmd->sgl.sge32[0].length = sc->current_map_sz;
+	dcmd->opcode = htole32(MR_DCMD_LD_MAP_GET_INFO);
+	dcmd->sgl.sge32[0].phys_addr = htole32(map_phys_addr & 0xFFFFFFFF);
+	dcmd->sgl.sge32[0].length = htole32(sc->current_map_sz);
 
 	sc->map_update_cmd = cmd;
 	if (mrsas_issue_dcmd(sc, cmd)) {
@@ -4462,6 +4593,7 @@ mrsas_get_pd_info(struct mrsas_softc *sc, u_int16_t device_id)
 
 	cmd = mrsas_get_mfi_cmd(sc);
 
+	DPRINTF("0 device_id 0x%x",  device_id);
 	if (!cmd) {
 		device_printf(sc->mrsas_dev,
 		    "Cannot alloc for get PD info cmd\n");
@@ -4472,28 +4604,33 @@ mrsas_get_pd_info(struct mrsas_softc *sc, u_int16_t device_id)
 	memset(sc->pd_info_mem, 0, sizeof(struct mrsas_pd_info));
 	memset(dcmd->mbox.b, 0, MFI_MBOX_SIZE);
 
-	dcmd->mbox.s[0] = device_id;
+	dcmd->mbox.s[0] = htole16(device_id);
 	dcmd->cmd = MFI_CMD_DCMD;
 	dcmd->cmd_status = 0xFF;
 	dcmd->sge_count = 1;
 	dcmd->flags = MFI_FRAME_DIR_READ;
 	dcmd->timeout = 0;
 	dcmd->pad_0 = 0;
-	dcmd->data_xfer_len = sizeof(struct mrsas_pd_info);
-	dcmd->opcode = MR_DCMD_PD_GET_INFO;
-	dcmd->sgl.sge32[0].phys_addr = (u_int32_t)sc->pd_info_phys_addr;
-	dcmd->sgl.sge32[0].length = sizeof(struct mrsas_pd_info);
+	dcmd->data_xfer_len = htole32(sizeof(struct mrsas_pd_info));
+	dcmd->opcode = htole32(MR_DCMD_PD_GET_INFO);
+	dcmd->sgl.sge32[0].phys_addr = htole32((u_int32_t)sc->pd_info_phys_addr & 0xFFFFFFFF);
+	dcmd->sgl.sge32[0].length = htole32(sizeof(struct mrsas_pd_info));
 
+	DPRINTF("status 0x%x", mrsas_read_reg(sc, offsetof(mrsas_reg_set, outbound_intr_status)));
 	if (!sc->mask_interrupts)
 		retcode = mrsas_issue_blocked_cmd(sc, cmd);
 	else
 		retcode = mrsas_issue_polled(sc, cmd);
 
+	DPRINTF("status 0x%x", mrsas_read_reg(sc, offsetof(mrsas_reg_set, outbound_intr_status)));
+	DPRINTF("retcode 0x%x",  retcode);
 	if (retcode == ETIMEDOUT)
 		goto dcmd_timeout;
 
+	DPRINTF("sc->pd_info_mem->state.ddf.pdType.intf 0x%x",  sc->pd_info_mem->state.ddf.pdType.intf);
 	sc->target_list[device_id].interface_type =
-		sc->pd_info_mem->state.ddf.pdType.intf;
+		le16toh(sc->pd_info_mem->state.ddf.pdType.intf);
+	DPRINTF("le16toh(sc->pd_info_mem->state.ddf.pdType.intf) 0x%x",  le16toh(sc->pd_info_mem->state.ddf.pdType.intf));
 
 	do_ocr = 0;
 
@@ -4601,13 +4738,13 @@ mrsas_get_pd_list(struct mrsas_softc *sc)
 	dcmd->cmd = MFI_CMD_DCMD;
 	dcmd->cmd_status = 0xFF;
 	dcmd->sge_count = 1;
-	dcmd->flags = MFI_FRAME_DIR_READ;
+	dcmd->flags = htole16(MFI_FRAME_DIR_READ);
 	dcmd->timeout = 0;
 	dcmd->pad_0 = 0;
-	dcmd->data_xfer_len = MRSAS_MAX_PD * sizeof(struct MR_PD_LIST);
-	dcmd->opcode = MR_DCMD_PD_LIST_QUERY;
-	dcmd->sgl.sge32[0].phys_addr = pd_list_phys_addr;
-	dcmd->sgl.sge32[0].length = MRSAS_MAX_PD * sizeof(struct MR_PD_LIST);
+	dcmd->data_xfer_len = htole32(MRSAS_MAX_PD * sizeof(struct MR_PD_LIST));
+	dcmd->opcode = htole32(MR_DCMD_PD_LIST_QUERY);
+	dcmd->sgl.sge32[0].phys_addr = htole32(pd_list_phys_addr & 0xFFFFFFFF);
+	dcmd->sgl.sge32[0].length = htole32(MRSAS_MAX_PD * sizeof(struct MR_PD_LIST));
 
 	if (!sc->mask_interrupts)
 		retcode = mrsas_issue_blocked_cmd(sc, cmd);
@@ -4620,17 +4757,18 @@ mrsas_get_pd_list(struct mrsas_softc *sc)
 	/* Get the instance PD list */
 	pd_count = MRSAS_MAX_PD;
 	pd_addr = pd_list_mem->addr;
-	if (pd_list_mem->count < pd_count) {
+	DPRINTF("count = 0x%x", le32toh(pd_list_mem->count));
+	if (le32toh(pd_list_mem->count) < pd_count) {
 		memset(sc->local_pd_list, 0,
 		    MRSAS_MAX_PD * sizeof(struct mrsas_pd_list));
-		for (pd_index = 0; pd_index < pd_list_mem->count; pd_index++) {
-			sc->local_pd_list[pd_addr->deviceId].tid = pd_addr->deviceId;
-			sc->local_pd_list[pd_addr->deviceId].driveType =
-			    pd_addr->scsiDevType;
-			sc->local_pd_list[pd_addr->deviceId].driveState =
+		for (pd_index = 0; pd_index < le32toh(pd_list_mem->count); pd_index++) {
+			sc->local_pd_list[le16toh(pd_addr->deviceId)].tid = le16toh(pd_addr->deviceId);
+			sc->local_pd_list[le16toh(pd_addr->deviceId)].driveType =
+			    le16toh(pd_addr->scsiDevType);
+			sc->local_pd_list[le16toh(pd_addr->deviceId)].driveState =
 			    MR_PD_STATE_SYSTEM;
-			if (sc->target_list[pd_addr->deviceId].target_id == 0xffff)
-				mrsas_add_target(sc, pd_addr->deviceId);
+			if (sc->target_list[le16toh(pd_addr->deviceId)].target_id == 0xffff)
+				mrsas_add_target(sc, le16toh(pd_addr->deviceId));
 			pd_addr++;
 		}
 		for (pd_index = 0; pd_index < MRSAS_MAX_PD; pd_index++) {
@@ -4711,10 +4849,10 @@ mrsas_get_ld_list(struct mrsas_softc *sc)
 	dcmd->sge_count = 1;
 	dcmd->flags = MFI_FRAME_DIR_READ;
 	dcmd->timeout = 0;
-	dcmd->data_xfer_len = sizeof(struct MR_LD_LIST);
-	dcmd->opcode = MR_DCMD_LD_GET_LIST;
-	dcmd->sgl.sge32[0].phys_addr = ld_list_phys_addr;
-	dcmd->sgl.sge32[0].length = sizeof(struct MR_LD_LIST);
+	dcmd->data_xfer_len = htole32(sizeof(struct MR_LD_LIST));
+	dcmd->opcode = htole32(MR_DCMD_LD_GET_LIST);
+	dcmd->sgl.sge32[0].phys_addr = htole32(ld_list_phys_addr);
+	dcmd->sgl.sge32[0].length = htole32(sizeof(struct MR_LD_LIST));
 	dcmd->pad_0 = 0;
 
 	if (!sc->mask_interrupts)
@@ -4730,10 +4868,10 @@ mrsas_get_ld_list(struct mrsas_softc *sc)
 #endif
 
 	/* Get the instance LD list */
-	if (ld_list_mem->ldCount <= sc->fw_supported_vd_count) {
-		sc->CurLdCount = ld_list_mem->ldCount;
+	if (le32toh(ld_list_mem->ldCount) <= sc->fw_supported_vd_count) {
+		sc->CurLdCount = le32toh(ld_list_mem->ldCount);
 		memset(sc->ld_ids, 0xff, MAX_LOGICAL_DRIVES_EXT);
-		for (ld_index = 0; ld_index < ld_list_mem->ldCount; ld_index++) {
+		for (ld_index = 0; ld_index < le32toh(ld_list_mem->ldCount); ld_index++) {
 			ids = ld_list_mem->ldList[ld_index].ref.ld_context.targetId;
 			drv_tgt_id = ids + MRSAS_MAX_PD;
 			if (ld_list_mem->ldList[ld_index].state != 0) {
@@ -4926,7 +5064,9 @@ mrsas_aen_handler(struct mrsas_softc *sc)
 			__func__, __LINE__);
 		return;
 	}
+	//DPRINTF("status 0x%x", mrsas_read_reg(sc, offsetof(mrsas_reg_set, outbound_intr_status)));
 	if (sc->evt_detail_mem) {
+	  //DPRINTF("sc->evt_detail_mem->code 0x%x",  sc->evt_detail_mem->code);
 		switch (sc->evt_detail_mem->code) {
 		case MR_EVT_PD_INSERTED:
 			fail_aen = mrsas_get_pd_list(sc);

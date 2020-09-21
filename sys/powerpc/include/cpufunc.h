@@ -171,7 +171,7 @@ mffs(void)
 
 	__asm __volatile ("mffs 0; stfd 0,0(%0)"
 			:: "b"(&value));
-	
+
 	return (value);
 }
 

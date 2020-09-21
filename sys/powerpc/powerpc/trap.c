@@ -417,11 +417,11 @@ trap(struct trapframe *frame)
 			} else if (sig == SIGFPE) {
 				ucode = get_fpu_exception(td);
 
-				/* 
+				/*
 				 * XXX: disable Floating Point Exceptions since
-				 * it triggers FPE trap again when caling
-				 * user-defined signal handler. Should we 
-				 * it disable specific exception bit instead?
+				 * it triggers FPE trap again when caling user-
+				 * defined signal handler. Should it diable
+				 * specific exception bits instead?
 				 */
 				cleanup_fpscr();
 

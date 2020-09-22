@@ -1163,7 +1163,6 @@ MR_BuildRaidContext(struct mrsas_softc *sc, struct IO_REQUEST_INFO *io_info,
 	pRAID_Context->VirtualDiskTgtId = raid->targetId;
 	pRAID_Context->regLockRowLBA = htole64(regStart);
 	pRAID_Context->regLockLength = htole32(regSize);
-	// coelho: no linix nao tem conversao para le
 	pRAID_Context->configSeqNum = raid->seqNum;
 
 	/*

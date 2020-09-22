@@ -54,21 +54,6 @@ __FBSDID("$FreeBSD$");
 #define	smp_processor_id()  PCPU_GET(cpuid)
 
 /*
- * MRSAS_DEBUG
- *
- * 0 - disabled
- * 1 - enable error messages (EPRINTF)
- * 2 - enable error and debug messages (DPRINTF)
- */
-#define MRSAS_DEBUG   2
-#if MRSAS_DEBUG >= 2
-/* debug printf */
-//#define DPRINTF(fmt, ...)       mrsas_dprint(sc, MRSAS_TRACE, "coelho %s: " fmt "\n", __func__, ## __VA_ARGS__);
-#define DPRINTF(fmt, ...)       
-#else
-#define DPRINTF(fmt, ...)       ((void)0)
-#endif
-/*
  * Function prototypes
  */
 int	mrsas_cam_attach(struct mrsas_softc *sc);
@@ -310,10 +295,8 @@ mrsas_action(struct cam_sim *sim, union ccb *ccb)
 			if (cam_sim_bus(sim) == 1 &&
 			    sc->pd_list[device_id].driveState != MR_PD_STATE_SYSTEM) {
 				ccb->ccb_h.status |= CAM_DEV_NOT_THERE;
-	      DPRINTF(" 0 ccb->ccb_h.func_code 0x%x device_id 0x%x", ccb->ccb_h.func_code, device_id);
 				xpt_done(ccb);
 			} else {
-	      DPRINTF("1 ccb->ccb_h.func_code 0x%x device_id 0x%x", ccb->ccb_h.func_code, device_id);
 				if (mrsas_startio(sc, sim, ccb)) {
 					ccb->ccb_h.status |= CAM_REQ_INVALID;
 					xpt_done(ccb);
@@ -596,7 +579,6 @@ mrsas_startio(struct mrsas_softc *sc, struct cam_sim *sim,
 
 	/* Check for IO type READ-WRITE targeted for Logical Volume */
 	cmd_type = mrsas_find_io_type(sim, ccb);
-	DPRINTF("cmd_type 0x%x csio->dxfer_len 0x%x", cmd_type, csio->dxfer_len);
 	switch (cmd_type) {
 	case READ_WRITE_LDIO:
 		/* Build READ-WRITE IO for Logical Volume  */

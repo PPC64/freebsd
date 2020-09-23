@@ -911,7 +911,6 @@ mrsas_attach(device_t dev)
 	/* Force the busmaster enable bit on. */
 	cmd |= PCIM_CMD_BUSMASTEREN;
 	pci_write_config(dev, PCIR_COMMAND, cmd, 2);
-	cmd = pci_read_config(dev, PCIR_COMMAND, 2);
 
 	/* For Ventura/Aero system registers are mapped to BAR0 */
 	if (sc->is_ventura || sc->is_aero)
@@ -2621,7 +2620,7 @@ mrsas_init_adapter(struct mrsas_softc *sc)
 	sc->max_sge_in_chain = sc->max_chain_frame_sz / sizeof(MPI2_SGE_IO_UNION);
 	sc->max_num_sge = sc->max_sge_in_main_msg + sc->max_sge_in_chain - 2;
 
-	mrsas_dprint(sc, MRSAS_TRACE,
+	mrsas_dprint(sc, MRSAS_INFO,
 	    "max sge: 0x%x, max chain frame size: 0x%x, "
 	    "max fw cmd: 0x%x sc->chain_frames_alloc_sz: 0x%x\n",
 	    sc->max_num_sge,
@@ -3118,7 +3117,6 @@ mrsas_ocr_thread(void *arg)
 	sc->ocr_thread_active = 1;
 	mtx_lock(&sc->sim_lock);
 	for (;;) {
-
 		/* Sleep for 1 second and check the queue status */
 		msleep(&sc->ocr_chan, &sc->sim_lock, PRIBIO,
 		    "mrsas_ocr", sc->mrsas_fw_fault_check_delay * hz);

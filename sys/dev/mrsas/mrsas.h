@@ -1148,7 +1148,6 @@ typedef struct _LD_STREAM_DETECT {
 	STREAM_DETECT streamTrack[MAX_STREAMS_TRACKED];
 } LD_STREAM_DETECT, *PTR_LD_STREAM_DETECT;
 
-
 typedef struct _MR_LD_TARGET_SYNC {
 	u_int8_t targetId;
 	u_int8_t reserved;
@@ -1673,7 +1672,6 @@ typedef enum _REGION_TYPE {
 	REGION_TYPE_SHARED_WRITE = 2,
 	REGION_TYPE_EXCLUSIVE = 3,
 }	REGION_TYPE;
-
 
 /*
  * SCSI-CAM Related Defines

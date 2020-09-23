@@ -440,7 +440,6 @@ mrsas_scsiio_timeout(void *data)
 	return;
 }
 
-#define	lower_32_bits(x)	((x) & 0xffffffffu)
 /*
  * mrsas_startio:	SCSI IO entry point
  * input:			Adapter instance soft state
@@ -630,7 +629,7 @@ mrsas_startio(struct mrsas_softc *sc, struct cam_sim *sim,
 
 	cmd->io_request->SGLFlags = htole16(MPI2_SGE_FLAGS_64_BIT_ADDRESSING);
 	cmd->io_request->SGLOffset0 = offsetof(MRSAS_RAID_SCSI_IO_REQUEST, SGL) / 4;
-	cmd->io_request->SenseBufferLowAddress = htole32(lower_32_bits(cmd->sense_phys_addr));
+	cmd->io_request->SenseBufferLowAddress = htole32(cmd->sense_phys_addr & 0xFFFFFFFF);
 	cmd->io_request->SenseBufferLength = MRSAS_SCSI_SENSE_BUFFERSIZE;
 
 	req_desc = cmd->request_desc;
@@ -808,7 +807,7 @@ mrsas_prepare_secondRaid1_IO(struct mrsas_softc *sc,
 	    (sc->max_sge_in_main_msg * sizeof(MPI2_SGE_IO_UNION)));
 
 	/* sense buffer is different for r1 command */
-	r1_cmd->io_request->SenseBufferLowAddress = htole32(lower_32_bits(r1_cmd->sense_phys_addr));
+	r1_cmd->io_request->SenseBufferLowAddress = htole32(r1_cmd->sense_phys_addr & 0xFFFFFFFF);
 	r1_cmd->ccb_ptr = cmd->ccb_ptr;
 
 	req_desc2 = mrsas_get_request_desc(sc, r1_cmd->index - 1);

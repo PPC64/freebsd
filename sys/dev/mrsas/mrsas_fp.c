@@ -309,7 +309,7 @@ MR_PopulateDrvRaidMapVentura(struct mrsas_softc *sc)
 	pDrvRaidMap->totalSize = htole32(sizeof(MR_DRV_RAID_MAP_ALL));
 	/* point to actual data starting point */
 	raid_map_data = (char *)fw_map_dyn +
-	    le32toh(fw_map_dyn->descTableOffset) + 
+	    le32toh(fw_map_dyn->descTableOffset) +
 	    le32toh(fw_map_dyn->descTableSize);
 
 	for (i = 0; i < le32toh(fw_map_dyn->descTableNumElements); ++i) {
@@ -341,7 +341,7 @@ MR_PopulateDrvRaidMapVentura(struct mrsas_softc *sc)
 			break;
 		case RAID_MAP_DESC_TYPE_TGTID_INFO:
 			fw_map_dyn->RaidMapDescPtrs.ptrStruct.ldTgtIdToLd = (u_int16_t *)
-			    ((char *)raid_map_data + 
+			    ((char *)raid_map_data +
 			     le32toh(desc_table->raidMapDescOffset));
 #if VD_EXT_DEBUG
 			device_printf(sc->mrsas_dev,
@@ -369,7 +369,7 @@ MR_PopulateDrvRaidMapVentura(struct mrsas_softc *sc)
 			fw_map_dyn->RaidMapDescPtrs.ptrStruct.ldSpanMap = (MR_LD_SPAN_MAP *) ((char *)raid_map_data +
 			    le32toh(desc_table->raidMapDescOffset));
 			memcpy(pDrvRaidMap->ldSpanMap, fw_map_dyn->RaidMapDescPtrs.ptrStruct.ldSpanMap,
-			    sizeof(MR_LD_SPAN_MAP) * 
+			    sizeof(MR_LD_SPAN_MAP) *
 			    le32toh(desc_table->raidMapDescElements));
 #if VD_EXT_DEBUG
 			device_printf(sc->mrsas_dev,
@@ -1261,7 +1261,7 @@ mr_update_span_set(MR_DRV_RAID_MAP_ALL * map, PLD_SPAN_INFO ldSpanInfo)
 
 				span_set->span_row_data_width = span_row_width;
 				span_row = mega_div64_32(((le64toh(quad->logEnd) -
-				    le64toh(quad->logStart)) + le32toh(quad->diff)), 
+				    le64toh(quad->logStart)) + le32toh(quad->diff)),
 				    le32toh(quad->diff));
 
 				if (element == 0) {
@@ -1276,7 +1276,7 @@ mr_update_span_set(MR_DRV_RAID_MAP_ALL * map, PLD_SPAN_INFO ldSpanInfo)
 					span_set->data_strip_end = (span_row * span_row_width) - 1;
 
 					span_set->data_row_start = 0;
-					span_set->data_row_end = 
+					span_set->data_row_end =
 					  (span_row * le32toh(quad->diff)) - 1;
 				} else {
 					span_set_prev = &(ldSpanInfo[ld].span_set[element - 1]);
@@ -1318,7 +1318,6 @@ mr_update_span_set(MR_DRV_RAID_MAP_ALL * map, PLD_SPAN_INFO ldSpanInfo)
  * This function updates the load balance parameters for the LD config of a two
  * drive optimal RAID-1.
  */
-#define	le32_to_cpus(x)	do { *((u_int32_t *)(x)) = le32toh((*(u_int32_t *)x)); } while (0)
 void
 mrsas_update_load_balance_params(struct mrsas_softc *sc,
     MR_DRV_RAID_MAP_ALL * drv_map, PLD_LOAD_BALANCE_INFO lbInfo)
@@ -1338,6 +1337,8 @@ mrsas_update_load_balance_params(struct mrsas_softc *sc,
 		}
 		raid = MR_LdRaidGet(ld, drv_map);
 		le32_to_cpus(&raid->capability);
+		//*((u_int32_t *)&raid->capability) =
+		//    le32toh(*((u_int32_t *)&raid->capability));
 		if ((raid->level != 1) ||
 		    (raid->ldState != MR_LD_STATE_OPTIMAL)) {
 			lbInfo[ldCount].loadBalanceFlag = 0;

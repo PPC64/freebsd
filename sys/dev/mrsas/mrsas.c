@@ -54,9 +54,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/smp.h>
 #include <sys/endian.h>
 
-#define le32_to_cpus(x) do { *((u_int32_t *)(x)) = le32toh((*(u_int32_t *)x)); } while (0)
-#define le16_to_cpus(x) do { *((u_int16_t *)(x)) = le16toh((*(u_int16_t *)x)); } while (0)
-
 /*
  * Function prototypes
  */
@@ -639,7 +636,6 @@ mrsas_get_seq_num(struct mrsas_softc *sc,
 	/*
 	 * Copy the data back into callers buffer
 	 */
-
 	memcpy(eli, sc->el_info_mem, sizeof(struct mrsas_evt_log_info));
 	mrsas_free_evt_log_info_cmd(sc);
 
@@ -682,11 +678,10 @@ mrsas_register_aen(struct mrsas_softc *sc, u_int32_t seq_num,
 	 * class_locale that is superset of both old and current and re-issue
 	 * to the FW
 	 */
-  
+
 	curr_aen.word = class_locale_word;
 
 	if (sc->aen_cmd) {
-
 		prev_aen.word = le32toh(sc->aen_cmd->frame->dcmd.mbox.w[1]);
 
 		/*
@@ -912,8 +907,7 @@ mrsas_attach(device_t dev)
 	/*
 	 * Set up PCI and registers
 	 */
-  cmd = pci_read_config(dev, PCIR_COMMAND, 2);
-
+	cmd = pci_read_config(dev, PCIR_COMMAND, 2);
 	/* Force the busmaster enable bit on. */
 	cmd |= PCIM_CMD_BUSMASTEREN;
 	pci_write_config(dev, PCIR_COMMAND, cmd, 2);
@@ -965,27 +959,21 @@ mrsas_attach(device_t dev)
 	if (mrsas_init_fw(sc) != SUCCESS) {
 		goto attach_fail_fw;
 	}
-//  printf("333333 %d, %d, %p, %p, %p\n", sc->is_ventura, sc->is_aero, sc->bus_tag, &bs_be_tag, &bs_le_tag);
 	/* Register mrsas to CAM layer */
 	if ((mrsas_cam_attach(sc) != SUCCESS)) {
-		device_printf(sc->mrsas_dev, "Error attaching to CAM\n");
 		goto attach_fail_cam;
 	}
-
 	/* Register IRQs */
 	if (mrsas_setup_irq(sc) != SUCCESS) {
 		goto attach_fail_irq;
 	}
-
 	error = mrsas_kproc_create(mrsas_ocr_thread, sc,
 	    &sc->ocr_thread, 0, 0, "mrsas_ocr%d",
 	    device_get_unit(sc->mrsas_dev));
-
 	if (error) {
 		device_printf(sc->mrsas_dev, "Error %d starting OCR thread\n", error);
 		goto attach_fail_ocr_thread;
 	}
-
 	/*
 	 * After FW initialization and OCR thread creation
 	 * we will defer the cdev creation, AEN setup on ICH callback
@@ -1605,9 +1593,9 @@ mrsas_poll(struct cdev *dev, int poll_events, struct thread *td)
 static int
 mrsas_setup_irq(struct mrsas_softc *sc)
 {
-	if (sc->msix_enable && (mrsas_setup_msix(sc) == SUCCESS)) {
+	if (sc->msix_enable && (mrsas_setup_msix(sc) == SUCCESS))
 		device_printf(sc->mrsas_dev, "MSI-x interrupts setup success\n");
-	}
+
 	else {
 		device_printf(sc->mrsas_dev, "Fall back to legacy interrupt\n");
 		sc->irq_context[0].sc = sc;
@@ -2370,7 +2358,6 @@ mrsas_init_fw(struct mrsas_softc *sc)
 	if (ret != SUCCESS) {
 		return (ret);
 	}
-
 	if (sc->is_ventura || sc->is_aero) {
 		scratch_pad_3 = mrsas_read_reg_with_retries(sc, offsetof(mrsas_reg_set, outbound_scratch_pad_3));
 #if VD_EXT_DEBUG
@@ -2440,7 +2427,6 @@ mrsas_init_fw(struct mrsas_softc *sc)
 		sc->msix_reg_offset[0] =
 		    MPI2_SUP_REPLY_POST_HOST_INDEX_OFFSET;
 	}
-
 	if (mrsas_init_adapter(sc) != SUCCESS) {
 		device_printf(sc->mrsas_dev, "Adapter initialize Fail.\n");
 		return (1);
@@ -2473,7 +2459,6 @@ mrsas_init_fw(struct mrsas_softc *sc)
 		device_printf(sc->mrsas_dev, "Unable to get FW ctrl_info.\n");
 		return (1);
 	}
-
 	sc->secure_jbod_support =
 	    (u_int8_t)sc->ctrl_info->adapterOperations3.supportSecurityonJBOD;
 
@@ -2491,7 +2476,6 @@ mrsas_init_fw(struct mrsas_softc *sc)
 		    "There seems to be some problem in the controller\n"
 		    "Please contact to the SUPPORT TEAM if the problem persists\n");
 	}
-
 	megasas_setup_jbod_map(sc);
 
 	memset(sc->target_list, 0,
@@ -2571,10 +2555,6 @@ mrsas_init_fw(struct mrsas_softc *sc)
 		
 	device_printf(sc->mrsas_dev, "max_fw_cmds: %u  max_scsi_cmds: %u\n",
 		sc->max_fw_cmds, sc->max_scsi_cmds);
-
-	mtx_lock(&sc->sim_lock);
-	mtx_unlock(&sc->sim_lock);
-
 	return (0);
 }
 
@@ -2613,7 +2593,11 @@ mrsas_init_adapter(struct mrsas_softc *sc)
 	scratch_pad_2 = mrsas_read_reg_with_retries(sc, offsetof(mrsas_reg_set,
 	    outbound_scratch_pad_2));
 
-  mrsas_dprint(sc, MRSAS_INFO, "%s: sc->reply_q_depth 0x%x, sc->request_alloc_sz 0x%x, sc->reply_alloc_sz 0x%x, sc->io_frames_alloc_sz 0x%x\n", __func__, sc->reply_q_depth, sc->request_alloc_sz, sc->reply_alloc_sz, sc->io_frames_alloc_sz);
+	mrsas_dprint(sc, MRSAS_TRACE, "%s: sc->reply_q_depth 0x%x,"
+	    "sc->request_alloc_sz 0x%x, sc->reply_alloc_sz 0x%x,"
+	    "sc->io_frames_alloc_sz 0x%x\n", __func__,
+	    sc->reply_q_depth, sc->request_alloc_sz,
+	    sc->reply_alloc_sz, sc->io_frames_alloc_sz);
 
 	/*
 	 * If scratch_pad_2 & MEGASAS_MAX_CHAIN_SIZE_UNITS_MASK is set,
@@ -2637,10 +2621,12 @@ mrsas_init_adapter(struct mrsas_softc *sc)
 	sc->max_sge_in_chain = sc->max_chain_frame_sz / sizeof(MPI2_SGE_IO_UNION);
 	sc->max_num_sge = sc->max_sge_in_main_msg + sc->max_sge_in_chain - 2;
 
-	mrsas_dprint(sc, MRSAS_INFO,
+	mrsas_dprint(sc, MRSAS_TRACE,
 	    "max sge: 0x%x, max chain frame size: 0x%x, "
-	    "max fw cmd: 0x%x sc->chain_frames_alloc_sz: 0x%x\n", sc->max_num_sge,
-	    sc->max_chain_frame_sz, sc->max_fw_cmds, sc->chain_frames_alloc_sz);
+	    "max fw cmd: 0x%x sc->chain_frames_alloc_sz: 0x%x\n",
+	    sc->max_num_sge,
+	    sc->max_chain_frame_sz, sc->max_fw_cmds,
+	    sc->chain_frames_alloc_sz);
 
 	/* Used for pass thru MFI frame (DCMD) */
 	sc->chain_offset_mfi_pthru = offsetof(MRSAS_RAID_SCSI_IO_REQUEST, SGL) / 16;
@@ -2648,7 +2634,6 @@ mrsas_init_adapter(struct mrsas_softc *sc)
 	sc->chain_offset_io_request = (MRSAS_MPI2_RAID_DEFAULT_IO_FRAME_SIZE -
 	    sizeof(MPI2_SGE_IO_UNION)) / 16;
 
-	mrsas_dprint(sc, MRSAS_INFO, "%s: sc->chain_offset_mfi_pthru 0x%x, sc->chain_offset_io_request 0x%x\n", __func__, sc->chain_offset_mfi_pthru, sc->chain_offset_io_request);
 	int count = sc->msix_vectors > 0 ? sc->msix_vectors : 1;
 
 	for (i = 0; i < count; i++)
@@ -2799,11 +2784,10 @@ mrsas_ioc_init(struct mrsas_softc *sc)
 	init_frame->data_xfer_len = htole32(sizeof(Mpi2IOCInitRequest_t));
 
 	req_desc.addr.u.low = htole32((bus_addr_t)sc->ioc_init_phys_mem & 0xFFFFFFFF);
-	req_desc.addr.u.high = htole32(((bus_addr_t)sc->ioc_init_phys_mem >> 32) & 0xFFFFFFFF);
+	req_desc.addr.u.high = htole32((bus_addr_t)sc->ioc_init_phys_mem >> 32);
 
 	req_desc.MFAIo.RequestFlags =
 	    (MRSAS_REQ_DESCRIPT_FLAGS_MFA << MRSAS_REQ_DESCRIPT_FLAGS_TYPE_SHIFT);
-
 
 	mrsas_disable_intr(sc);
 	mrsas_dprint(sc, MRSAS_OCR, "Issuing IOC INIT command to FW.\n");
@@ -3128,7 +3112,6 @@ mrsas_ocr_thread(void *arg)
 	struct mrsas_softc *sc;
 	u_int32_t fw_status, fw_state;
 	u_int8_t tm_target_reset_failed = 0;
-	u_int32_t abs_state;
 
 	sc = (struct mrsas_softc *)arg;
 
@@ -3177,16 +3160,10 @@ mrsas_ocr_thread(void *arg)
 				if (tm_target_reset_failed)
 					device_printf(sc->mrsas_dev, "Initiaiting OCR because of "
 					    "TM FAILURE!\n");
-				else {
+				else
 					device_printf(sc->mrsas_dev, "Initiaiting OCR "
 						"because of %s!\n", sc->do_timedout_reset ?
 						"DCMD IO Timeout" : "FW fault");
-		      abs_state = mrsas_read_reg_with_retries(sc, offsetof(mrsas_reg_set, outbound_scratch_pad));
-			    device_printf(sc->mrsas_dev, 
-			        "FW in FAULT state Fault code:0x%x subcode:0x%x func:%s\n",
-				      abs_state & MFI_STATE_FAULT_CODE,
-				      abs_state & MFI_STATE_FAULT_SUBCODE, __func__);
-				}
 
 				mtx_lock_spin(&sc->ioctl_lock);
 				sc->reset_in_progress = 1;
@@ -3648,7 +3625,6 @@ mrsas_release_mfi_cmd(struct mrsas_mfi_cmd *cmd_mfi)
  * information is mainly used to find out the maximum IO transfer per command
  * supported by the FW.
  */
-
 static int
 mrsas_get_ctrl_info(struct mrsas_softc *sc)
 {
@@ -3692,7 +3668,6 @@ mrsas_get_ctrl_info(struct mrsas_softc *sc)
 		goto dcmd_timeout;
 	else {
 		memcpy(sc->ctrl_info, sc->ctlr_info_mem, sizeof(struct mrsas_ctrl_info));
-
 		le32_to_cpus(&sc->ctrl_info->properties.OnOffProperties);
 		le32_to_cpus(&sc->ctrl_info->adapterOperations2);
 		le32_to_cpus(&sc->ctrl_info->adapterOperations3);

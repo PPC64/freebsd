@@ -10,6 +10,7 @@ MAN=	accept_filter.9 \
 	alq.9 \
 	altq.9 \
 	atomic.9 \
+	backlight.9 \
 	bhnd.9 \
 	bhnd_erom.9 \
 	bios.9 \
@@ -121,6 +122,9 @@ MAN=	accept_filter.9 \
 	DEVICE_SHUTDOWN.9 \
 	DEV_MODULE.9 \
 	dev_refthread.9 \
+	devctl_notify.9 \
+	devctl_process_running.9 \
+	devctl_safe_quote_sb.9 \
 	devstat.9 \
 	devtoname.9 \
 	disk.9 \
@@ -1092,6 +1096,9 @@ MLINKS+=getenv.9 freeenv.9 \
 	getenv.9 getenv_quad.9 \
 	getenv.9 getenv_uint.9 \
 	getenv.9 getenv_ulong.9 \
+	getenv.9 getenv_bool.9 \
+	getenv.9 getenv_is_true.9 \
+	getenv.9 getenv_is_false.9 \
 	getenv.9 kern_getenv.9 \
 	getenv.9 kern_setenv.9 \
 	getenv.9 kern_unsetenv.9 \

@@ -70,6 +70,7 @@ _LIBRARIES=	\
 		${_INTERNALLIBS} \
 		${LOCAL_LIBRARIES} \
 		80211 \
+		9p \
 		alias \
 		archive \
 		asn1 \
@@ -202,6 +203,7 @@ _LIBRARIES=	\
 		z \
 		zfs_core \
 		zfs \
+		zfsbootenv \
 		zpool \
 		zutil
 
@@ -245,6 +247,7 @@ LIBVERIEXEC?=	${LIBVERIEXECDIR}/libveriexec.a
 # Each library's LIBADD needs to be duplicated here for static linkage of
 # 2nd+ order consumers.  Auto-generating this would be better.
 _DP_80211=	sbuf bsdxml
+_DP_9p=		sbuf
 _DP_archive=	z bz2 lzma bsdxml zstd
 _DP_zstd=	pthread
 .if ${MK_BLACKLIST} != "no"
@@ -385,10 +388,11 @@ _DP_tpool=	spl
 _DP_uutil=	avl spl
 _DP_zfs=	md pthread umem util uutil m avl bsdxml crypto geom nvpair \
 	z zfs_core zutil
+_DP_zfsbootenv= zfs nvpair
 _DP_zfs_core=	nvpair
 _DP_zpool=	md pthread z icp spl nvpair avl umem
 _DP_zutil=	avl tpool
-_DP_be=		zfs spl nvpair
+_DP_be=		zfs spl nvpair zfsbootenv
 _DP_netmap=
 _DP_ifconfig=	m
 
@@ -600,6 +604,7 @@ LIBUMEMDIR=	${OBJTOP}/cddl/lib/libumem
 LIBUUTILDIR=	${OBJTOP}/cddl/lib/libuutil
 LIBZFSDIR=	${OBJTOP}/cddl/lib/libzfs
 LIBZFS_COREDIR=	${OBJTOP}/cddl/lib/libzfs_core
+LIBZFSBOOTENVDIR=	${OBJTOP}/cddl/lib/libzfsbootenv
 LIBZPOOLDIR=	${OBJTOP}/cddl/lib/libzpool
 LIBZUTILDIR=	${OBJTOP}/cddl/lib/libzutil
 LIBTPOOLDIR=	${OBJTOP}/cddl/lib/libtpool

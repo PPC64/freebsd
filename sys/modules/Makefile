@@ -41,7 +41,6 @@ SUBDIR=	\
 	amr \
 	${_an} \
 	${_aout} \
-	${_apm} \
 	${_arcmsr} \
 	${_allwinner} \
 	${_armv8crypto} \
@@ -59,6 +58,7 @@ SUBDIR=	\
 	ath_rate \
 	ath_pci \
 	${_autofs} \
+	backlight \
 	${_bce} \
 	${_bcm283x_clkman} \
 	${_bcm283x_pwm} \
@@ -743,7 +743,6 @@ _vmm=		vmm
 # XXX some of these can move now, but are untested on other architectures.
 _3dfx=		3dfx
 _3dfx_linux=	3dfx_linux
-_apm=		apm
 .if ${MK_SOURCELESS_HOST} != "no"
 _ce=		ce
 .endif
@@ -779,7 +778,7 @@ _wi=		wi
 _virtio=	virtio
 .endif
 
-.if ${MACHINE_ARCH} == "powerpc64"
+.if ${MACHINE_ARCH:Mpowerpc64*} != ""
 _ipmi=		ipmi
 _ixl=		ixl
 _nvram=		opal_nvram

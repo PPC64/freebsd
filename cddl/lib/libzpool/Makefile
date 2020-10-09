@@ -228,12 +228,14 @@ CFLAGS+= \
 	-I${ZFSTOP}/lib/libspl/include \
 	-I${ZFSTOP}/lib/libspl/include/os/freebsd \
 	-I${SRCTOP}/sys \
+	-I${ZFSTOP}/include/os/freebsd/zfs \
 	-I${SRCTOP}/cddl/compat/opensolaris/include \
 	-I${ZFSTOP}/module/icp/include \
 	-include ${ZFSTOP}/include/os/freebsd/spl/sys/ccompile.h \
 	-DHAVE_ISSETUGID \
 	-include ${SRCTOP}/sys/modules/zfs/zfs_config.h \
 	-I${SRCTOP}/sys/modules/zfs \
+	-I${ZFSTOP}/include/os/freebsd/zfs \
 	-DLIB_ZPOOL_BUILD -DZFS_DEBUG \
 
 # XXX: pthread doesn't have mutex_owned() equivalent, so we need to look

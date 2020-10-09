@@ -38,7 +38,6 @@ __FBSDID("$FreeBSD$");
 #include "opt_ipsec.h"
 #include "opt_kern_tls.h"
 #include "opt_mbuf_stress_test.h"
-#include "opt_mpath.h"
 #include "opt_ratelimit.h"
 #include "opt_route.h"
 #include "opt_rss.h"
@@ -470,11 +469,7 @@ again:
 			 * for correct operation (as it is for ARP).
 			 */
 			uint32_t flowid;
-#ifdef RADIX_MPATH
-			flowid = ntohl(ip->ip_src.s_addr ^ ip->ip_dst.s_addr);
-#else
 			flowid = m->m_pkthdr.flowid;
-#endif
 			ro->ro_nh = fib4_lookup(fibnum, dst->sin_addr, 0,
 			    NHR_REF, flowid);
 
@@ -512,7 +507,8 @@ again:
 	} else {
 		struct nhop_object *nh;
 
-		nh = fib4_lookup(M_GETFIB(m), ip->ip_dst, 0, NHR_NONE, 0);
+		nh = fib4_lookup(M_GETFIB(m), ip->ip_dst, 0, NHR_NONE,
+		    m->m_pkthdr.flowid);
 		if (nh == NULL) {
 #if defined(IPSEC) || defined(IPSEC_SUPPORT)
 			/*

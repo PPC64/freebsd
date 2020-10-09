@@ -251,6 +251,9 @@ _elf_aux_info(int aux, void *buf, int buflen)
 		return (ENOSYS);
 	_once(&aux_once, init_aux);
 
+	if (buflen < 0)
+		return (EINVAL);
+
 	switch (aux) {
 	case AT_CANARY:
 		if (canary != NULL && canary_len >= buflen) {
@@ -267,7 +270,8 @@ _elf_aux_info(int aux, void *buf, int buflen)
 		else if (buf == NULL)
 			res = EINVAL;
 		else {
-			if (strlcpy(buf, execpath, buflen) >= buflen)
+			if (strlcpy(buf, execpath, buflen) >=
+			    (unsigned int)buflen)
 				res = EINVAL;
 			else
 				res = 0;

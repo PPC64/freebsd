@@ -1510,7 +1510,7 @@ sctp_process_cookie_existing(struct mbuf *m, int iphlen, int offset,
 			 *   ----INIT-ACK(tag=t)-->
 			 *   ----INIT(tag=t)------> *1
 			 *   <---INIT-ACK(tag=a)---
-                         *   <----CE(tag=t)------------- *2
+			 *   <----CE(tag=t)------------- *2
 			 *
 			 * At point *1 we should be generating a different
 			 * tag t'. Which means we would throw away the CE and send
@@ -1741,8 +1741,7 @@ sctp_process_cookie_existing(struct mbuf *m, int iphlen, int offset,
 			if (((stcb->sctp_ep->sctp_flags & SCTP_PCB_FLAGS_TCPTYPE) ||
 			    (stcb->sctp_ep->sctp_flags & SCTP_PCB_FLAGS_IN_TCPPOOL)) &&
 			    (!SCTP_IS_LISTENING(inp))) {
-				stcb->sctp_ep->sctp_flags |=
-				    SCTP_PCB_FLAGS_CONNECTED;
+				stcb->sctp_ep->sctp_flags |= SCTP_PCB_FLAGS_CONNECTED;
 				soisconnected(stcb->sctp_socket);
 			}
 			if (SCTP_GET_STATE(stcb) == SCTP_STATE_COOKIE_ECHOED)
@@ -1831,17 +1830,14 @@ sctp_process_cookie_existing(struct mbuf *m, int iphlen, int offset,
 			/* move to OPEN state, if not in SHUTDOWN_SENT */
 			SCTP_SET_STATE(stcb, SCTP_STATE_OPEN);
 		}
-		asoc->pre_open_streams =
-		    ntohs(initack_cp->init.num_outbound_streams);
+		asoc->pre_open_streams = ntohs(initack_cp->init.num_outbound_streams);
 		asoc->init_seq_number = ntohl(initack_cp->init.initial_tsn);
 		asoc->sending_seq = asoc->asconf_seq_out = asoc->str_reset_seq_out = asoc->init_seq_number;
 		asoc->asconf_seq_out_acked = asoc->asconf_seq_out - 1;
-
 		asoc->asconf_seq_in = asoc->last_acked_seq = asoc->init_seq_number - 1;
-
 		asoc->str_reset_seq_in = asoc->init_seq_number;
-
 		asoc->advanced_peer_ack_point = asoc->last_acked_seq;
+		asoc->send_sack = 1;
 		if (asoc->mapping_array) {
 			memset(asoc->mapping_array, 0,
 			    asoc->mapping_array_size);
@@ -2032,10 +2028,6 @@ sctp_process_cookie_new(struct mbuf *m, int iphlen, int offset,
 		    vrf_id, port);
 		return (NULL);
 	}
-	/* get the correct sctp_nets */
-	if (netp)
-		*netp = sctp_findnet(stcb, init_src);
-
 	asoc = &stcb->asoc;
 	/* get scope variables out of cookie */
 	asoc->scope.ipv4_local_scope = cookie->ipv4_scope;
@@ -2074,10 +2066,7 @@ sctp_process_cookie_new(struct mbuf *m, int iphlen, int offset,
 	asoc->advanced_peer_ack_point = asoc->last_acked_seq;
 
 	/* process the INIT info (peer's info) */
-	if (netp)
-		retval = sctp_process_init(init_cp, stcb);
-	else
-		retval = 0;
+	retval = sctp_process_init(init_cp, stcb);
 	if (retval < 0) {
 		(void)sctp_free_assoc(inp, stcb, SCTP_NORMAL_PROC,
 		    SCTP_FROM_SCTP_INPUT + SCTP_LOC_19);
@@ -2191,19 +2180,21 @@ sctp_process_cookie_new(struct mbuf *m, int iphlen, int offset,
 		 */
 		;
 	}
-	/* since we did not send a HB make sure we don't double things */
-	if ((netp) && (*netp))
-		(*netp)->hb_responded = 1;
-
 	if (stcb->asoc.sctp_autoclose_ticks &&
 	    sctp_is_feature_on(inp, SCTP_PCB_FLAGS_AUTOCLOSE)) {
 		sctp_timer_start(SCTP_TIMER_TYPE_AUTOCLOSE, inp, stcb, NULL);
 	}
 	(void)SCTP_GETTIME_TIMEVAL(&stcb->asoc.time_entered);
-	if ((netp != NULL) && (*netp != NULL)) {
+	*netp = sctp_findnet(stcb, init_src);
+	if (*netp != NULL) {
 		struct timeval old;
 
-		/* calculate the RTT and set the encaps port */
+		/*
+		 * Since we did not send a HB, make sure we don't double
+		 * things.
+		 */
+		(*netp)->hb_responded = 1;
+		/* Calculate the RTT. */
 		old.tv_sec = cookie->time_entered.tv_sec;
 		old.tv_usec = cookie->time_entered.tv_usec;
 		sctp_calculate_rto(stcb, asoc, *netp, &old, SCTP_RTT_FROM_NON_DATA);
@@ -4122,7 +4113,6 @@ sctp_handle_packet_dropped(struct sctp_pktdrop_chunk *cp,
 	struct sctp_idata_chunk *idata_chunk;
 	uint32_t bottle_bw, on_queue;
 	uint32_t offset, chk_len;
-	uint16_t trunc_len;
 	uint16_t pktdrp_len;
 	uint8_t pktdrp_flags;
 
@@ -4132,13 +4122,10 @@ sctp_handle_packet_dropped(struct sctp_pktdrop_chunk *cp,
 	pktdrp_len = ntohs(cp->ch.chunk_length);
 	KASSERT(limit <= pktdrp_len, ("Inconsistent limit"));
 	if (pktdrp_flags & SCTP_PACKET_TRUNCATED) {
-		trunc_len = ntohs(cp->trunc_len);
-		if (trunc_len <= pktdrp_len - sizeof(struct sctp_pktdrop_chunk)) {
+		if (ntohs(cp->trunc_len) <= pktdrp_len - sizeof(struct sctp_pktdrop_chunk)) {
 			/* The peer plays games with us. */
 			return;
 		}
-	} else {
-		trunc_len = 0;
 	}
 	limit -= sizeof(struct sctp_pktdrop_chunk);
 	offset = 0;
@@ -5563,7 +5550,9 @@ sctp_common_input_processing(struct mbuf **mm, int iphlen, int offset, int lengt
 			stcb = NULL;
 			goto out;
 		}
-		data_processed = 1;
+		if (retval == 0) {
+			data_processed = 1;
+		}
 		/*
 		 * Anything important needs to have been m_copy'ed in
 		 * process_data

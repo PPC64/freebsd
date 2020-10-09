@@ -591,6 +591,50 @@ static int t4_panic_on_fatal_err = 0;
 SYSCTL_INT(_hw_cxgbe, OID_AUTO, panic_on_fatal_err, CTLFLAG_RDTUN,
     &t4_panic_on_fatal_err, 0, "panic on fatal errors");
 
+static int t4_tx_vm_wr = 0;
+SYSCTL_INT(_hw_cxgbe, OID_AUTO, tx_vm_wr, CTLFLAG_RWTUN, &t4_tx_vm_wr, 0,
+    "Use VM work requests to transmit packets.");
+
+/*
+ * Set to non-zero to enable the attack filter.  A packet that matches any of
+ * these conditions will get dropped on ingress:
+ * 1) IP && source address == destination address.
+ * 2) TCP/IP && source address is not a unicast address.
+ * 3) TCP/IP && destination address is not a unicast address.
+ * 4) IP && source address is loopback (127.x.y.z).
+ * 5) IP && destination address is loopback (127.x.y.z).
+ * 6) IPv6 && source address == destination address.
+ * 7) IPv6 && source address is not a unicast address.
+ * 8) IPv6 && source address is loopback (::1/128).
+ * 9) IPv6 && destination address is loopback (::1/128).
+ * 10) IPv6 && source address is unspecified (::/128).
+ * 11) IPv6 && destination address is unspecified (::/128).
+ * 12) TCP/IPv6 && source address is multicast (ff00::/8).
+ * 13) TCP/IPv6 && destination address is multicast (ff00::/8).
+ */
+static int t4_attack_filter = 0;
+SYSCTL_INT(_hw_cxgbe, OID_AUTO, attack_filter, CTLFLAG_RDTUN,
+    &t4_attack_filter, 0, "Drop suspicious traffic");
+
+static int t4_drop_ip_fragments = 0;
+SYSCTL_INT(_hw_cxgbe, OID_AUTO, drop_ip_fragments, CTLFLAG_RDTUN,
+    &t4_drop_ip_fragments, 0, "Drop IP fragments");
+
+static int t4_drop_pkts_with_l2_errors = 1;
+SYSCTL_INT(_hw_cxgbe, OID_AUTO, drop_pkts_with_l2_errors, CTLFLAG_RDTUN,
+    &t4_drop_pkts_with_l2_errors, 0,
+    "Drop all frames with Layer 2 length or checksum errors");
+
+static int t4_drop_pkts_with_l3_errors = 0;
+SYSCTL_INT(_hw_cxgbe, OID_AUTO, drop_pkts_with_l3_errors, CTLFLAG_RDTUN,
+    &t4_drop_pkts_with_l3_errors, 0,
+    "Drop all frames with IP version, length, or checksum errors");
+
+static int t4_drop_pkts_with_l4_errors = 0;
+SYSCTL_INT(_hw_cxgbe, OID_AUTO, drop_pkts_with_l4_errors, CTLFLAG_RDTUN,
+    &t4_drop_pkts_with_l4_errors, 0,
+    "Drop all frames with Layer 4 length, checksum, or other errors");
+
 #ifdef TCP_OFFLOAD
 /*
  * TOE tunables.
@@ -695,6 +739,7 @@ static int sysctl_bitfield_8b(SYSCTL_HANDLER_ARGS);
 static int sysctl_bitfield_16b(SYSCTL_HANDLER_ARGS);
 static int sysctl_btphy(SYSCTL_HANDLER_ARGS);
 static int sysctl_noflowq(SYSCTL_HANDLER_ARGS);
+static int sysctl_tx_vm_wr(SYSCTL_HANDLER_ARGS);
 static int sysctl_holdoff_tmr_idx(SYSCTL_HANDLER_ARGS);
 static int sysctl_holdoff_pktc_idx(SYSCTL_HANDLER_ARGS);
 static int sysctl_qsize_rxq(SYSCTL_HANDLER_ARGS);
@@ -1723,6 +1768,8 @@ cxgbe_vi_attach(device_t dev, struct vi_info *vi)
 
 	vi->xact_addr_filt = -1;
 	callout_init(&vi->tick, 1);
+	if (sc->flags & IS_VF || t4_tx_vm_wr != 0)
+		vi->flags |= TX_USES_VM_WR;
 
 	/* Allocate an ifnet and set it up */
 	ifp = if_alloc_dev(IFT_ETHER, dev);
@@ -1775,7 +1822,10 @@ cxgbe_vi_attach(device_t dev, struct vi_info *vi)
 #endif
 
 	ifp->if_hw_tsomax = IP_MAXPACKET;
-	ifp->if_hw_tsomaxsegcount = TX_SGL_SEGS_TSO;
+	if (vi->flags & TX_USES_VM_WR)
+		ifp->if_hw_tsomaxsegcount = TX_SGL_SEGS_VM_TSO;
+	else
+		ifp->if_hw_tsomaxsegcount = TX_SGL_SEGS_TSO;
 #ifdef RATELIMIT
 	if (is_ethoffload(sc) && vi->nofldtxq != 0)
 		ifp->if_hw_tsomaxsegcount = TX_SGL_SEGS_EO_TSO;
@@ -2174,11 +2224,8 @@ cxgbe_transmit(struct ifnet *ifp, struct mbuf *m)
 {
 	struct vi_info *vi = ifp->if_softc;
 	struct port_info *pi = vi->pi;
-	struct adapter *sc = pi->adapter;
+	struct adapter *sc;
 	struct sge_txq *txq;
-#ifdef RATELIMIT
-	struct cxgbe_snd_tag *cst;
-#endif
 	void *items[1];
 	int rc;
 
@@ -2194,7 +2241,7 @@ cxgbe_transmit(struct ifnet *ifp, struct mbuf *m)
 		return (ENETDOWN);
 	}
 
-	rc = parse_pkt(sc, &m);
+	rc = parse_pkt(&m, vi->flags & TX_USES_VM_WR);
 	if (__predict_false(rc != 0)) {
 		MPASS(m == NULL);			/* was freed already */
 		atomic_add_int(&pi->tx_parse_error, 1);	/* rare, atomic is ok */
@@ -2202,13 +2249,13 @@ cxgbe_transmit(struct ifnet *ifp, struct mbuf *m)
 	}
 #ifdef RATELIMIT
 	if (m->m_pkthdr.csum_flags & CSUM_SND_TAG) {
-		cst = mst_to_cst(m->m_pkthdr.snd_tag);
-		if (cst->type == IF_SND_TAG_TYPE_RATE_LIMIT)
+		if (m->m_pkthdr.snd_tag->type == IF_SND_TAG_TYPE_RATE_LIMIT)
 			return (ethofld_transmit(ifp, m));
 	}
 #endif
 
 	/* Select a txq. */
+	sc = vi->adapter;
 	txq = &sc->sge.txq[vi->first_txq];
 	if (M_HASHTYPE_GET(m) != M_HASHTYPE_NONE)
 		txq += ((m->m_pkthdr.flowid % (vi->ntxq - vi->rsrv_noflowq)) +
@@ -2363,14 +2410,6 @@ cxgbe_get_counter(struct ifnet *ifp, ift_counter c)
 }
 
 #if defined(KERN_TLS) || defined(RATELIMIT)
-void
-cxgbe_snd_tag_init(struct cxgbe_snd_tag *cst, struct ifnet *ifp, int type)
-{
-
-	m_snd_tag_init(&cst->com, ifp);
-	cst->type = type;
-}
-
 static int
 cxgbe_snd_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
     struct m_snd_tag **pt)
@@ -2391,8 +2430,6 @@ cxgbe_snd_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
 	default:
 		error = EOPNOTSUPP;
 	}
-	if (error == 0)
-		MPASS(mst_to_cst(*pt)->type == params->hdr.type);
 	return (error);
 }
 
@@ -2400,10 +2437,8 @@ static int
 cxgbe_snd_tag_modify(struct m_snd_tag *mst,
     union if_snd_tag_modify_params *params)
 {
-	struct cxgbe_snd_tag *cst;
 
-	cst = mst_to_cst(mst);
-	switch (cst->type) {
+	switch (mst->type) {
 #ifdef RATELIMIT
 	case IF_SND_TAG_TYPE_RATE_LIMIT:
 		return (cxgbe_rate_tag_modify(mst, params));
@@ -2417,10 +2452,8 @@ static int
 cxgbe_snd_tag_query(struct m_snd_tag *mst,
     union if_snd_tag_query_params *params)
 {
-	struct cxgbe_snd_tag *cst;
 
-	cst = mst_to_cst(mst);
-	switch (cst->type) {
+	switch (mst->type) {
 #ifdef RATELIMIT
 	case IF_SND_TAG_TYPE_RATE_LIMIT:
 		return (cxgbe_rate_tag_query(mst, params));
@@ -2433,10 +2466,8 @@ cxgbe_snd_tag_query(struct m_snd_tag *mst,
 static void
 cxgbe_snd_tag_free(struct m_snd_tag *mst)
 {
-	struct cxgbe_snd_tag *cst;
 
-	cst = mst_to_cst(mst);
-	switch (cst->type) {
+	switch (mst->type) {
 #ifdef RATELIMIT
 	case IF_SND_TAG_TYPE_RATE_LIMIT:
 		cxgbe_rate_tag_free(mst);
@@ -4749,7 +4780,7 @@ t4_enable_kern_tls(struct adapter *sc)
 static int
 set_params__post_init(struct adapter *sc)
 {
-	uint32_t param, val;
+	uint32_t mask, param, val;
 #ifdef TCP_OFFLOAD
 	int i, v, shift;
 #endif
@@ -4769,6 +4800,33 @@ set_params__post_init(struct adapter *sc)
 	val = 1 << (G_MASKSIZE(t4_read_reg(sc, A_TP_RSS_CONFIG_TNL)) - 1);
 	t4_set_reg_field(sc, A_TP_RSS_CONFIG_TNL, V_MASKFILTER(M_MASKFILTER),
 	    V_MASKFILTER(val - 1));
+
+	mask = F_DROPERRORANY | F_DROPERRORMAC | F_DROPERRORIPVER |
+	    F_DROPERRORFRAG | F_DROPERRORATTACK | F_DROPERRORETHHDRLEN |
+	    F_DROPERRORIPHDRLEN | F_DROPERRORTCPHDRLEN | F_DROPERRORPKTLEN |
+	    F_DROPERRORTCPOPT | F_DROPERRORCSUMIP | F_DROPERRORCSUM;
+	val = 0;
+	if (t4_attack_filter != 0) {
+		t4_set_reg_field(sc, A_TP_GLOBAL_CONFIG, F_ATTACKFILTERENABLE,
+		    F_ATTACKFILTERENABLE);
+		val |= F_DROPERRORATTACK;
+	}
+	if (t4_drop_ip_fragments != 0) {
+		t4_set_reg_field(sc, A_TP_GLOBAL_CONFIG, F_FRAGMENTDROP,
+		    F_FRAGMENTDROP);
+		val |= F_DROPERRORFRAG;
+	}
+	if (t4_drop_pkts_with_l2_errors != 0)
+		val |= F_DROPERRORMAC | F_DROPERRORETHHDRLEN;
+	if (t4_drop_pkts_with_l3_errors != 0) {
+		val |= F_DROPERRORIPVER | F_DROPERRORIPHDRLEN |
+		    F_DROPERRORCSUMIP;
+	}
+	if (t4_drop_pkts_with_l4_errors != 0) {
+		val |= F_DROPERRORTCPHDRLEN | F_DROPERRORPKTLEN |
+		    F_DROPERRORTCPOPT | F_DROPERRORCSUM;
+	}
+	t4_set_reg_field(sc, A_TP_ERR_CONFIG, mask, val);
 
 #ifdef TCP_OFFLOAD
 	/*
@@ -6316,7 +6374,7 @@ t4_sysctls(struct adapter *sc)
 	    sc->params.nports, "# of ports");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "doorbells",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, doorbells,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, doorbells,
 	    (uintptr_t)&sc->doorbells, sysctl_bitfield_8b, "A",
 	    "available doorbells");
 
@@ -6324,12 +6382,12 @@ t4_sysctls(struct adapter *sc)
 	    sc->params.vpd.cclk, "core clock frequency (in KHz)");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "holdoff_timers",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE,
 	    sc->params.sge.timer_val, sizeof(sc->params.sge.timer_val),
 	    sysctl_int_array, "A", "interrupt holdoff timer values (us)");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "holdoff_pkt_counts",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE,
 	    sc->params.sge.counter_val, sizeof(sc->params.sge.counter_val),
 	    sysctl_int_array, "A", "interrupt holdoff packet counter values");
 
@@ -6389,7 +6447,7 @@ t4_sysctls(struct adapter *sc)
 
 #define SYSCTL_CAP(name, n, text) \
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, #name, \
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, caps_decoder[n], \
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, caps_decoder[n], \
 	    (uintptr_t)&sc->name, sysctl_bitfield_16b, "A", \
 	    "available " text " capabilities")
 
@@ -6408,27 +6466,27 @@ t4_sysctls(struct adapter *sc)
 	    NULL, sc->tids.nftids, "number of filters");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "temperature",
-	    CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_temperature, "I", "chip temperature (in Celsius)");
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "reset_sensor",
-	    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_reset_sensor, "I", "reset the chip's temperature sensor.");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "loadavg",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_loadavg, "A",
 	    "microprocessor load averages (debug firmwares only)");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "core_vdd",
-	    CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0, sysctl_vdd,
+	    CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0, sysctl_vdd,
 	    "I", "core Vdd (in mV)");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "local_cpus",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, LOCAL_CPUS,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, LOCAL_CPUS,
 	    sysctl_cpus, "A", "local CPUs");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "intr_cpus",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, INTR_CPUS,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, INTR_CPUS,
 	    sysctl_cpus, "A", "preferred CPUs for interrupts");
 
 	SYSCTL_ADD_INT(ctx, children, OID_AUTO, "swintr", CTLFLAG_RW,
@@ -6443,175 +6501,175 @@ t4_sysctls(struct adapter *sc)
 	children = SYSCTL_CHILDREN(oid);
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "cctrl",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_cctrl, "A", "congestion control");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "cim_ibq_tp0",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_cim_ibq_obq, "A", "CIM IBQ 0 (TP0)");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "cim_ibq_tp1",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 1,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 1,
 	    sysctl_cim_ibq_obq, "A", "CIM IBQ 1 (TP1)");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "cim_ibq_ulp",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 2,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 2,
 	    sysctl_cim_ibq_obq, "A", "CIM IBQ 2 (ULP)");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "cim_ibq_sge0",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 3,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 3,
 	    sysctl_cim_ibq_obq, "A", "CIM IBQ 3 (SGE0)");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "cim_ibq_sge1",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 4,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 4,
 	    sysctl_cim_ibq_obq, "A", "CIM IBQ 4 (SGE1)");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "cim_ibq_ncsi",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 5,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 5,
 	    sysctl_cim_ibq_obq, "A", "CIM IBQ 5 (NCSI)");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "cim_la",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_cim_la, "A", "CIM logic analyzer");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "cim_ma_la",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_cim_ma_la, "A", "CIM MA logic analyzer");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "cim_obq_ulp0",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc,
 	    0 + CIM_NUM_IBQ, sysctl_cim_ibq_obq, "A", "CIM OBQ 0 (ULP0)");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "cim_obq_ulp1",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc,
 	    1 + CIM_NUM_IBQ, sysctl_cim_ibq_obq, "A", "CIM OBQ 1 (ULP1)");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "cim_obq_ulp2",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc,
 	    2 + CIM_NUM_IBQ, sysctl_cim_ibq_obq, "A", "CIM OBQ 2 (ULP2)");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "cim_obq_ulp3",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc,
 	    3 + CIM_NUM_IBQ, sysctl_cim_ibq_obq, "A", "CIM OBQ 3 (ULP3)");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "cim_obq_sge",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc,
 	    4 + CIM_NUM_IBQ, sysctl_cim_ibq_obq, "A", "CIM OBQ 4 (SGE)");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "cim_obq_ncsi",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc,
 	    5 + CIM_NUM_IBQ, sysctl_cim_ibq_obq, "A", "CIM OBQ 5 (NCSI)");
 
 	if (chip_id(sc) > CHELSIO_T4) {
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "cim_obq_sge0_rx",
-		    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc,
+		    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc,
 		    6 + CIM_NUM_IBQ, sysctl_cim_ibq_obq, "A",
 		    "CIM OBQ 6 (SGE0-RX)");
 
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "cim_obq_sge1_rx",
-		    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc,
+		    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc,
 		    7 + CIM_NUM_IBQ, sysctl_cim_ibq_obq, "A",
 		    "CIM OBQ 7 (SGE1-RX)");
 	}
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "cim_pif_la",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_cim_pif_la, "A", "CIM PIF logic analyzer");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "cim_qcfg",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_cim_qcfg, "A", "CIM queue configuration");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "cpl_stats",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_cpl_stats, "A", "CPL statistics");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "ddp_stats",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_ddp_stats, "A", "non-TCP DDP statistics");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "devlog",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_devlog, "A", "firmware's device log");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "fcoe_stats",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_fcoe_stats, "A", "FCoE statistics");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "hw_sched",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_hw_sched, "A", "hardware scheduler ");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "l2t",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_l2t, "A", "hardware L2 table");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "smt",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_smt, "A", "hardware source MAC table");
 
 #ifdef INET6
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "clip",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_clip, "A", "active CLIP table entries");
 #endif
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "lb_stats",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_lb_stats, "A", "loopback statistics");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "meminfo",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_meminfo, "A", "memory regions");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "mps_tcam",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    chip_id(sc) <= CHELSIO_T5 ? sysctl_mps_tcam : sysctl_mps_tcam_t6,
 	    "A", "MPS TCAM entries");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "path_mtus",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_path_mtus, "A", "path MTUs");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "pm_stats",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_pm_stats, "A", "PM statistics");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "rdma_stats",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_rdma_stats, "A", "RDMA statistics");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "tcp_stats",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_tcp_stats, "A", "TCP statistics");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "tids",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_tids, "A", "TID information");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "tp_err_stats",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_tp_err_stats, "A", "TP error statistics");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "tp_la_mask",
-	    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_tp_la_mask, "I", "TP logic analyzer event capture mask");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "tp_la",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_tp_la, "A", "TP logic analyzer");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "tx_rate",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_tx_rate, "A", "Tx rate");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "ulprx_la",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 	    sysctl_ulprx_la, "A", "ULPRX logic analyzer");
 
 	if (chip_id(sc) >= CHELSIO_T5) {
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "wcwr_stats",
-		    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+		    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 		    sysctl_wcwr_stats, "A", "write combined work requests");
 	}
 
@@ -6668,11 +6726,11 @@ t4_sysctls(struct adapter *sc)
 
 		sc->tt.tls = 0;
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "tls", CTLTYPE_INT |
-		    CTLFLAG_RW | CTLFLAG_NEEDGIANT, sc, 0, sysctl_tls, "I",
+		    CTLFLAG_RW | CTLFLAG_MPSAFE, sc, 0, sysctl_tls, "I",
 		    "Inline TLS allowed");
 
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "tls_rx_ports",
-		    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_NEEDGIANT, sc, 0,
+		    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, sc, 0,
 		    sysctl_tls_rx_ports, "I",
 		    "TCP ports that use inline TLS+TOE RX");
 
@@ -6697,72 +6755,72 @@ t4_sysctls(struct adapter *sc)
 		    "autorcvbuf increment");
 
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "timer_tick",
-		    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+		    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 		    sysctl_tp_tick, "A", "TP timer tick (us)");
 
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "timestamp_tick",
-		    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 1,
+		    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 1,
 		    sysctl_tp_tick, "A", "TCP timestamp tick (us)");
 
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "dack_tick",
-		    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 2,
+		    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 2,
 		    sysctl_tp_tick, "A", "DACK tick (us)");
 
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "dack_timer",
-		    CTLTYPE_UINT | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, 0,
+		    CTLTYPE_UINT | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 		    sysctl_tp_dack_timer, "IU", "DACK timer (us)");
 
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "rexmt_min",
-		    CTLTYPE_ULONG | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc,
+		    CTLTYPE_ULONG | CTLFLAG_RD | CTLFLAG_MPSAFE, sc,
 		    A_TP_RXT_MIN, sysctl_tp_timer, "LU",
 		    "Minimum retransmit interval (us)");
 
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "rexmt_max",
-		    CTLTYPE_ULONG | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc,
+		    CTLTYPE_ULONG | CTLFLAG_RD | CTLFLAG_MPSAFE, sc,
 		    A_TP_RXT_MAX, sysctl_tp_timer, "LU",
 		    "Maximum retransmit interval (us)");
 
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "persist_min",
-		    CTLTYPE_ULONG | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc,
+		    CTLTYPE_ULONG | CTLFLAG_RD | CTLFLAG_MPSAFE, sc,
 		    A_TP_PERS_MIN, sysctl_tp_timer, "LU",
 		    "Persist timer min (us)");
 
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "persist_max",
-		    CTLTYPE_ULONG | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc,
+		    CTLTYPE_ULONG | CTLFLAG_RD | CTLFLAG_MPSAFE, sc,
 		    A_TP_PERS_MAX, sysctl_tp_timer, "LU",
 		    "Persist timer max (us)");
 
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "keepalive_idle",
-		    CTLTYPE_ULONG | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc,
+		    CTLTYPE_ULONG | CTLFLAG_RD | CTLFLAG_MPSAFE, sc,
 		    A_TP_KEEP_IDLE, sysctl_tp_timer, "LU",
 		    "Keepalive idle timer (us)");
 
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "keepalive_interval",
-		    CTLTYPE_ULONG | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc,
+		    CTLTYPE_ULONG | CTLFLAG_RD | CTLFLAG_MPSAFE, sc,
 		    A_TP_KEEP_INTVL, sysctl_tp_timer, "LU",
 		    "Keepalive interval timer (us)");
 
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "initial_srtt",
-		    CTLTYPE_ULONG | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc,
+		    CTLTYPE_ULONG | CTLFLAG_RD | CTLFLAG_MPSAFE, sc,
 		    A_TP_INIT_SRTT, sysctl_tp_timer, "LU", "Initial SRTT (us)");
 
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "finwait2_timer",
-		    CTLTYPE_ULONG | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc,
+		    CTLTYPE_ULONG | CTLFLAG_RD | CTLFLAG_MPSAFE, sc,
 		    A_TP_FINWAIT2_TIMER, sysctl_tp_timer, "LU",
 		    "FINWAIT2 timer (us)");
 
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "syn_rexmt_count",
-		    CTLTYPE_UINT | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc,
+		    CTLTYPE_UINT | CTLFLAG_RD | CTLFLAG_MPSAFE, sc,
 		    S_SYNSHIFTMAX, sysctl_tp_shift_cnt, "IU",
 		    "Number of SYN retransmissions before abort");
 
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "rexmt_count",
-		    CTLTYPE_UINT | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc,
+		    CTLTYPE_UINT | CTLFLAG_RD | CTLFLAG_MPSAFE, sc,
 		    S_RXTSHIFTMAXR2, sysctl_tp_shift_cnt, "IU",
 		    "Number of retransmissions before abort");
 
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "keepalive_count",
-		    CTLTYPE_UINT | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc,
+		    CTLTYPE_UINT | CTLFLAG_RD | CTLFLAG_MPSAFE, sc,
 		    S_KEEPALIVEMAXR2, sysctl_tp_shift_cnt, "IU",
 		    "Number of keepalive probes before abort");
 
@@ -6773,7 +6831,7 @@ t4_sysctls(struct adapter *sc)
 		for (i = 0; i < 16; i++) {
 			snprintf(s, sizeof(s), "%u", i);
 			SYSCTL_ADD_PROC(ctx, children, OID_AUTO, s,
-			    CTLTYPE_UINT | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc,
+			    CTLTYPE_UINT | CTLFLAG_RD | CTLFLAG_MPSAFE, sc,
 			    i, sysctl_tp_backoff, "IU",
 			    "TOE retransmit backoff");
 		}
@@ -6813,9 +6871,19 @@ vi_sysctls(struct vi_info *vi)
 
 	if (IS_MAIN_VI(vi)) {
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "rsrv_noflowq",
-		    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_NEEDGIANT, vi, 0,
+		    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, vi, 0,
 		    sysctl_noflowq, "IU",
 		    "Reserve queue 0 for non-flowid packets");
+	}
+
+	if (vi->adapter->flags & IS_VF) {
+		MPASS(vi->flags & TX_USES_VM_WR);
+		SYSCTL_ADD_UINT(ctx, children, OID_AUTO, "tx_vm_wr", CTLFLAG_RD,
+		    NULL, 1, "use VM work requests for transmit");
+	} else {
+		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "tx_vm_wr",
+		    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, vi, 0,
+		    sysctl_tx_vm_wr, "I", "use VM work requestes for transmit");
 	}
 
 #ifdef TCP_OFFLOAD
@@ -6827,11 +6895,11 @@ vi_sysctls(struct vi_info *vi)
 		    CTLFLAG_RD, &vi->first_ofld_rxq, 0,
 		    "index of first TOE rx queue");
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "holdoff_tmr_idx_ofld",
-		    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_NEEDGIANT, vi, 0,
+		    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, vi, 0,
 		    sysctl_holdoff_tmr_idx_ofld, "I",
 		    "holdoff timer index for TOE queues");
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "holdoff_pktc_idx_ofld",
-		    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_NEEDGIANT, vi, 0,
+		    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, vi, 0,
 		    sysctl_holdoff_pktc_idx_ofld, "I",
 		    "holdoff packet counter index for TOE queues");
 	}
@@ -6862,17 +6930,17 @@ vi_sysctls(struct vi_info *vi)
 #endif
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "holdoff_tmr_idx",
-	    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_NEEDGIANT, vi, 0,
+	    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, vi, 0,
 	    sysctl_holdoff_tmr_idx, "I", "holdoff timer index");
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "holdoff_pktc_idx",
-	    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_NEEDGIANT, vi, 0,
+	    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, vi, 0,
 	    sysctl_holdoff_pktc_idx, "I", "holdoff packet counter index");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "qsize_rxq",
-	    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_NEEDGIANT, vi, 0,
+	    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, vi, 0,
 	    sysctl_qsize_rxq, "I", "rx queue size");
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "qsize_txq",
-	    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_NEEDGIANT, vi, 0,
+	    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, vi, 0,
 	    sysctl_qsize_txq, "I", "tx queue size");
 }
 
@@ -6896,30 +6964,30 @@ cxgbe_sysctls(struct port_info *pi)
 	children = SYSCTL_CHILDREN(oid);
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "linkdnrc",
-	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, pi, 0,
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, pi, 0,
 	    sysctl_linkdnrc, "A", "reason why link is down");
 	if (pi->port_type == FW_PORT_TYPE_BT_XAUI) {
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "temperature",
-		    CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_NEEDGIANT, pi, 0,
+		    CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE, pi, 0,
 		    sysctl_btphy, "I", "PHY temperature (in Celsius)");
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "fw_version",
-		    CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_NEEDGIANT, pi, 1,
+		    CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE, pi, 1,
 		    sysctl_btphy, "I", "PHY firmware version");
 	}
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "pause_settings",
-	    CTLTYPE_STRING | CTLFLAG_RW | CTLFLAG_NEEDGIANT, pi, 0,
+	    CTLTYPE_STRING | CTLFLAG_RW | CTLFLAG_MPSAFE, pi, 0,
 	    sysctl_pause_settings, "A",
 	    "PAUSE settings (bit 0 = rx_pause, 1 = tx_pause, 2 = pause_autoneg)");
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "fec",
-	    CTLTYPE_STRING | CTLFLAG_RW | CTLFLAG_NEEDGIANT, pi, 0,
+	    CTLTYPE_STRING | CTLFLAG_RW | CTLFLAG_MPSAFE, pi, 0,
 	    sysctl_fec, "A",
 	    "FECs to use (bit 0 = RS, 1 = FC, 2 = none, 5 = auto, 6 = module)");
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "module_fec",
-	    CTLTYPE_STRING | CTLFLAG_NEEDGIANT, pi, 0, sysctl_module_fec, "A",
+	    CTLTYPE_STRING | CTLFLAG_MPSAFE, pi, 0, sysctl_module_fec, "A",
 	    "FEC recommended by the cable/transceiver");
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "autoneg",
-	    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_NEEDGIANT, pi, 0,
+	    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, pi, 0,
 	    sysctl_autoneg, "I",
 	    "autonegotiation (-1 = not supported)");
 
@@ -6961,12 +7029,12 @@ cxgbe_sysctls(struct port_info *pi)
 		    SYSCTL_CHILDREN(oid), OID_AUTO, name,
 		    CTLFLAG_RD | CTLFLAG_MPSAFE, NULL, "traffic class"));
 		SYSCTL_ADD_PROC(ctx, children2, OID_AUTO, "flags",
-		    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, tc_flags,
+		    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, tc_flags,
 		    (uintptr_t)&tc->flags, sysctl_bitfield_8b, "A", "flags");
 		SYSCTL_ADD_UINT(ctx, children2, OID_AUTO, "refcount",
 		    CTLFLAG_RD, &tc->refcount, 0, "references to this class");
 		SYSCTL_ADD_PROC(ctx, children2, OID_AUTO, "params",
-		    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc,
+		    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc,
 		    (pi->port_id << 16) | i, sysctl_tc_params, "A",
 		    "traffic class parameters");
 	}
@@ -6983,7 +7051,7 @@ cxgbe_sysctls(struct port_info *pi)
 
 #define SYSCTL_ADD_T4_REG64(pi, name, desc, reg) \
     SYSCTL_ADD_OID(ctx, children, OID_AUTO, name, \
-        CTLTYPE_U64 | CTLFLAG_RD | CTLFLAG_NEEDGIANT, sc, reg, \
+        CTLTYPE_U64 | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, reg, \
         sysctl_handle_t4_reg64, "QU", desc)
 
 	SYSCTL_ADD_T4_REG64(pi, "tx_octets", "# of octets in good frames",
@@ -7245,6 +7313,63 @@ sysctl_noflowq(SYSCTL_HANDLER_ARGS)
 	else
 		vi->rsrv_noflowq = 0;
 
+	return (rc);
+}
+
+static int
+sysctl_tx_vm_wr(SYSCTL_HANDLER_ARGS)
+{
+	struct vi_info *vi = arg1;
+	struct adapter *sc = vi->adapter;
+	int rc, val, i;
+
+	MPASS(!(sc->flags & IS_VF));
+
+	val = vi->flags & TX_USES_VM_WR ? 1 : 0;
+	rc = sysctl_handle_int(oidp, &val, 0, req);
+	if (rc != 0 || req->newptr == NULL)
+		return (rc);
+
+	if (val != 0 && val != 1)
+		return (EINVAL);
+
+	rc = begin_synchronized_op(sc, vi, HOLD_LOCK | SLEEP_OK | INTR_OK,
+	    "t4txvm");
+	if (rc)
+		return (rc);
+	if (vi->ifp->if_drv_flags & IFF_DRV_RUNNING) {
+		/*
+		 * We don't want parse_pkt to run with one setting (VF or PF)
+		 * and then eth_tx to see a different setting but still use
+		 * stale information calculated by parse_pkt.
+		 */
+		rc = EBUSY;
+	} else {
+		struct port_info *pi = vi->pi;
+		struct sge_txq *txq;
+		uint32_t ctrl0;
+		uint8_t npkt = sc->params.max_pkts_per_eth_tx_pkts_wr;
+
+		if (val) {
+			vi->flags |= TX_USES_VM_WR;
+			vi->ifp->if_hw_tsomaxsegcount = TX_SGL_SEGS_VM_TSO;
+			ctrl0 = htobe32(V_TXPKT_OPCODE(CPL_TX_PKT_XT) |
+			    V_TXPKT_INTF(pi->tx_chan));
+			if (!(sc->flags & IS_VF))
+				npkt--;
+		} else {
+			vi->flags &= ~TX_USES_VM_WR;
+			vi->ifp->if_hw_tsomaxsegcount = TX_SGL_SEGS_TSO;
+			ctrl0 = htobe32(V_TXPKT_OPCODE(CPL_TX_PKT_XT) |
+			    V_TXPKT_INTF(pi->tx_chan) | V_TXPKT_PF(sc->pf) |
+			    V_TXPKT_VF(vi->vin) | V_TXPKT_VF_VLD(vi->vfvld));
+		}
+		for_each_txq(vi, i, txq) {
+			txq->cpl_ctrl0 = ctrl0;
+			txq->txp.max_npkt = npkt;
+		}
+	}
+	end_synchronized_op(sc, LOCK_HELD);
 	return (rc);
 }
 

@@ -118,6 +118,8 @@ enum {
 	SGE_MAX_WR_NDESC = SGE_MAX_WR_LEN / EQ_ESIZE, /* max WR size in desc */
 	TX_SGL_SEGS = 39,
 	TX_SGL_SEGS_TSO = 38,
+	TX_SGL_SEGS_VM = 38,
+	TX_SGL_SEGS_VM_TSO = 37,
 	TX_SGL_SEGS_EO_TSO = 30,	/* XXX: lower for IPv6. */
 	TX_SGL_SEGS_VXLAN_TSO = 37,
 	TX_WR_FLITS = SGE_MAX_WR_LEN / 8
@@ -173,6 +175,7 @@ enum {
 	DOOMED		= (1 << 0),
 	VI_INIT_DONE	= (1 << 1),
 	VI_SYSCTL_CTX	= (1 << 2),
+	TX_USES_VM_WR 	= (1 << 3),
 
 	/* adapter debug_flags */
 	DF_DUMP_MBOX		= (1 << 0),	/* Log all mbox cmd/rpl. */
@@ -727,6 +730,7 @@ struct sge_nm_rxq {
 	uint32_t fl_sidx2;	/* copy of fl_sidx */
 	uint32_t fl_db_val;
 	u_int fl_db_saved;
+	u_int fl_db_threshold;	/* in descriptors */
 	u_int fl_hwidx:4;
 
 	/*
@@ -1198,7 +1202,6 @@ int update_mac_settings(struct ifnet *, int);
 int adapter_full_init(struct adapter *);
 int adapter_full_uninit(struct adapter *);
 uint64_t cxgbe_get_counter(struct ifnet *, ift_counter);
-void cxgbe_snd_tag_init(struct cxgbe_snd_tag *, struct ifnet *, int);
 int vi_full_init(struct vi_info *);
 int vi_full_uninit(struct vi_info *);
 void vi_sysctls(struct vi_info *);
@@ -1267,7 +1270,7 @@ void t4_intr_evt(void *);
 void t4_wrq_tx_locked(struct adapter *, struct sge_wrq *, struct wrqe *);
 void t4_update_fl_bufsize(struct ifnet *);
 struct mbuf *alloc_wr_mbuf(int, int);
-int parse_pkt(struct adapter *, struct mbuf **);
+int parse_pkt(struct mbuf **, bool);
 void *start_wrq_wr(struct sge_wrq *, int, struct wrq_cookie *);
 void commit_wrq_wr(struct sge_wrq *, void *, struct wrq_cookie *);
 int tnl_cong(struct port_info *, int);

@@ -145,6 +145,23 @@ static struct mtx_padalign pv_lock[PV_LOCK_COUNT];
 #define PV_PAGE_UNLOCK(m)	PV_UNLOCK(VM_PAGE_TO_PHYS(m))
 #define PV_PAGE_LOCKASSERT(m)	PV_LOCKASSERT(VM_PAGE_TO_PHYS(m))
 
+/* DTrace stuff */
+
+#include <sys/sdt.h>
+
+SDT_PROVIDER_DEFINE(pmap);
+
+/* (prov, mod, func, name, arg0) */
+SDT_PROBE_DEFINE1(pmap, , moea64_enter, enter, "vm_offset_t");
+SDT_PROBE_DEFINE1(pmap, , moea64_enter, leave, "int");
+
+/*
+ * SDT_PROBE1(pmap, , moea64_enter, enter, va);
+ * SDT_PROBE1(pmap, , moea64_enter, leave, rc);
+ */
+
+static void moea64_init_counters(void);
+
 struct ofw_map {
 	cell_t	om_va;
 	cell_t	om_len;
@@ -1484,6 +1501,173 @@ moea64_page_is_mapped(vm_page_t m)
  * will be wired down.
  */
 
+/* MOEA64 counters */
+
+static uma_zone_t	moea64_counters_zone;
+static int		mc_state;
+
+#define	MC_STOP		0
+#define	MC_RUN		1
+#define	MC_RESET	2
+
+#define	MC_COUNTERS	4
+
+struct moea64_counter {
+	uint64_t	count;
+	uint64_t	cycles;
+};
+
+struct moea64_counter *moea64_counters_base;
+
+static __inline void
+moea64_counter_aggregate(int counter, struct moea64_counter *c)
+{
+	int i;
+	struct moea64_counter *mc_pcpu;
+
+	/* Aggregate counters */
+	memset(c, 0, sizeof(*c));
+	for (i = 0; i <= mp_maxid; i++) {
+		mc_pcpu = zpcpu_get_cpu(moea64_counters_base, i);
+		c->count += mc_pcpu[counter].count;
+		c->cycles += mc_pcpu[counter].cycles;
+	}
+}
+
+static int
+moea64_counter_count(SYSCTL_HANDLER_ARGS)
+{
+	struct moea64_counter c;
+
+	moea64_counter_aggregate(arg2, &c);
+	return (sysctl_handle_64(oidp, &c.count, 0, req));
+}
+
+static int
+moea64_counter_nanos(SYSCTL_HANDLER_ARGS)
+{
+	struct moea64_counter c;
+	uint64_t nanos;
+
+	moea64_counter_aggregate(arg2, &c);
+
+	/*
+	 * Get avg cycles / call and convert to nanos.
+	 *
+	 * Instead of dividing cpu_tickrate() by 10^9, that could cause
+	 * a big precision loss, divide it by 10^6 and multiply cycles
+	 * by 10^3 instead.
+	 */
+	nanos = (c.cycles * 1000UL / c.count) / (cpu_tickrate() / (1000UL * 1000UL));
+
+	return (sysctl_handle_64(oidp, &nanos, 0, req));
+}
+
+static void
+moea64_counters_reset(void)
+{
+	int i;
+	struct moea64_counter *mc_pcpu;
+
+	for (i = 0; i <= mp_maxid; i++) {
+		mc_pcpu = zpcpu_get_cpu(moea64_counters_base, i);
+		memset(mc_pcpu, 0, sizeof(*mc_pcpu) * MC_COUNTERS);
+	}
+}
+
+static int
+moea64_counters_state(SYSCTL_HANDLER_ARGS)
+{
+	int state;
+
+	if (req->newptr &&
+	    copyin((const char *)req->newptr + req->newidx,
+	    &state, sizeof(int)) == 0) {
+		atomic_store_rel_int(&mc_state, state);
+
+		if (state & MC_RESET)
+			moea64_counters_reset();
+	} else
+		state = atomic_load_acq_int(&mc_state);
+
+	return (sysctl_handle_int(oidp, &state, 0, req));
+}
+
+/* state */
+
+static SYSCTL_NODE(_vm, OID_AUTO, pmap, CTLFLAG_RD, 0,
+    "VM/pmap parameters");
+
+static SYSCTL_NODE(_vm_pmap, OID_AUTO, counters, CTLFLAG_RD, 0,
+    "MOEA64 counters");
+
+SYSCTL_PROC(_vm_pmap_counters, OID_AUTO, state,
+    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, 0, 0,
+    moea64_counters_state, "I",
+    "MOEA64 counters state: 0 - stop, 1 - run, 2 - reset, 3 - reset&run");
+
+/* counters */
+
+#define	MOEA64_COUNTER(counter)						\
+SYSCTL_PROC(_vm_pmap_counters, OID_AUTO, counter##_count,		\
+    CTLTYPE_U64 | CTLFLAG_RD | CTLFLAG_MPSAFE, 0, MC_##counter,		\
+    moea64_counter_count, "LU", #counter "_count");			\
+									\
+SYSCTL_PROC(_vm_pmap_counters, OID_AUTO, counter##_nanos,		\
+    CTLTYPE_U64 | CTLFLAG_RD | CTLFLAG_MPSAFE, 0, MC_##counter,		\
+    moea64_counter_nanos, "LU", #counter "_nanos")
+
+static void
+moea64_init_counters(void)
+{
+	moea64_counters_zone = uma_zcreate("MOEA64 counters",
+	    sizeof(struct moea64_counter) * MC_COUNTERS,
+	/*  ctor, dtor, zini, zfin, */
+	    NULL, NULL, NULL, NULL, UMA_ALIGN_CACHE,
+	    UMA_ZONE_PCPU);
+
+	moea64_counters_base = uma_zalloc_pcpu(moea64_counters_zone,
+	    M_NOWAIT | M_ZERO);
+	if (moea64_counters_base == NULL)
+		panic("Failed to alloc moea64 counters!");
+}
+
+static __always_inline void
+moea64_counter_t1(int counter, uint64_t t0)
+{
+	struct moea64_counter *mc_pcpu;
+	uint64_t t1;
+
+	t1 = mftb();
+	if (__predict_false(!moea64_initialized))
+		return;
+	if ((atomic_load_acq_int(&mc_state) & MC_RUN) == 0)
+		return;
+
+	critical_enter();
+	mc_pcpu = (struct moea64_counter *)zpcpu_get(moea64_counters_base);
+	mc_pcpu[counter].count++;
+	if (__predict_true(t1 >= t0))
+		mc_pcpu[counter].cycles += t1 - t0;
+	critical_exit();
+}
+
+#define	MOEA64_COUNTER_DECL(counter)	uint64_t counter ## _t0
+#define	MOEA64_COUNTER_T0(counter)	counter ## _t0 = mftb()
+#define	MOEA64_COUNTER_T1(counter)	moea64_counter_t1(MC_##counter, counter##_t0)
+
+#define	MC_SET_TS(t)			t = mftb()
+#define	MC_SET_T0(counter, t0)		counter ## _t0 = t0
+
+#define	MC_ENTER	0
+#define	MC_ENTER_LOCKED	1
+#define	MC_ENTER_INLOCK	2
+#define	MC_ENTER3	3
+
+MOEA64_COUNTER(ENTER);
+MOEA64_COUNTER(ENTER_LOCKED);	/* from trying to acquire lock until release */
+MOEA64_COUNTER(ENTER_INLOCK);	/* time spent inside locked region */
+
 int
 moea64_enter(pmap_t pmap, vm_offset_t va, vm_page_t m,
     vm_prot_t prot, u_int flags, int8_t psind)
@@ -1492,6 +1676,11 @@ moea64_enter(pmap_t pmap, vm_offset_t va, vm_page_t m,
 	struct		pvo_head *pvo_head;
 	uint64_t	pte_lo;
 	int		error;
+	MOEA64_COUNTER_DECL(ENTER);
+	MOEA64_COUNTER_DECL(ENTER_LOCKED);
+	MOEA64_COUNTER_DECL(ENTER_INLOCK);
+
+	MOEA64_COUNTER_T0(ENTER);
 
 	if ((m->oflags & VPO_UNMANAGED) == 0) {
 		if ((flags & PMAP_ENTER_QUICK_LOCKED) == 0)
@@ -1503,6 +1692,7 @@ moea64_enter(pmap_t pmap, vm_offset_t va, vm_page_t m,
 	pvo = alloc_pvo_entry(0);
 	if (pvo == NULL)
 		return (KERN_RESOURCE_SHORTAGE);
+
 	pvo->pvo_pmap = NULL; /* to be filled in later */
 	pvo->pvo_pte.prot = prot;
 
@@ -1519,8 +1709,11 @@ moea64_enter(pmap_t pmap, vm_offset_t va, vm_page_t m,
 		pvo->pvo_vaddr |= PVO_MANAGED;
 	}
 
+	MOEA64_COUNTER_T0(ENTER_LOCKED);
 	PV_PAGE_LOCK(m);
 	PMAP_LOCK(pmap);
+	MOEA64_COUNTER_T0(ENTER_INLOCK);
+
 	if (pvo->pvo_pmap == NULL)
 		init_pvo_entry(pvo, pmap, va);
 	if (prot & VM_PROT_WRITE)
@@ -1555,8 +1748,11 @@ moea64_enter(pmap_t pmap, vm_offset_t va, vm_page_t m,
 			moea64_pvo_enter(pvo, pvo_head, NULL);
 		}
 	}
+
+	MOEA64_COUNTER_T1(ENTER_INLOCK);
 	PMAP_UNLOCK(pmap);
 	PV_PAGE_UNLOCK(m);
+	MOEA64_COUNTER_T1(ENTER_LOCKED);
 
 	/* Free any dead pages */
 	if (error == EEXIST) {
@@ -1574,6 +1770,7 @@ out:
 		vm_page_aflag_set(m, PGA_EXECUTABLE);
 		moea64_syncicache(pmap, va, VM_PAGE_TO_PHYS(m), PAGE_SIZE);
 	}
+	MOEA64_COUNTER_T1(ENTER);
 	return (KERN_SUCCESS);
 }
 
@@ -1762,6 +1959,7 @@ moea64_init()
 	elf32_nxstack = 1;
 #endif
 
+	moea64_init_counters();
 	moea64_initialized = TRUE;
 }
 

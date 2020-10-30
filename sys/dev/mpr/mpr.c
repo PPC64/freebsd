@@ -1062,14 +1062,14 @@ mpr_request_sync(struct mpr_softc *sc, void *req, MPI2_DEFAULT_REPLY *reply,
 	 * pointed by data16.
 	 */
 	data16[0] =
-	    le16toh(mpr_regread(sc, MPI2_DOORBELL_OFFSET) & MPI2_DOORBELL_DATA_MASK);
+	    le16toh(mpr_regread(sc, MPI2_DOORBELL_OFFSET)) & MPI2_DOORBELL_DATA_MASK;
 	mpr_regwrite(sc, MPI2_HOST_INTERRUPT_STATUS_OFFSET, 0x0);
 	if (mpr_wait_db_int(sc) != 0) {
 		mpr_dprint(sc, MPR_FAULT, "Timeout reading doorbell 1\n");
 		return (ENXIO);
 	}
 	data16[1] =
-	    le16toh(mpr_regread(sc, MPI2_DOORBELL_OFFSET) & MPI2_DOORBELL_DATA_MASK);
+	    le16toh(mpr_regread(sc, MPI2_DOORBELL_OFFSET)) & MPI2_DOORBELL_DATA_MASK;
 	mpr_regwrite(sc, MPI2_HOST_INTERRUPT_STATUS_OFFSET, 0x0);
 
 	/* Number of 32bit words in the message */
@@ -1094,8 +1094,8 @@ mpr_request_sync(struct mpr_softc *sc, void *req, MPI2_DEFAULT_REPLY *reply,
 			    "Timeout reading doorbell %d\n", i);
 			return (ENXIO);
 		}
-		data16[i] = le16toh(mpr_regread(sc, MPI2_DOORBELL_OFFSET) &
-		    MPI2_DOORBELL_DATA_MASK);
+		data16[i] = le16toh(mpr_regread(sc, MPI2_DOORBELL_OFFSET)) &
+		    MPI2_DOORBELL_DATA_MASK;
 		mpr_regwrite(sc, MPI2_HOST_INTERRUPT_STATUS_OFFSET, 0x0);
 	}
 

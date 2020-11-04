@@ -328,6 +328,7 @@ device		nfe		# nVidia nForce MCP on-board Ethernet
 device		sfxge		# Solarflare SFC9000 10Gb Ethernet
 device		vmx		# VMware VMXNET3 Ethernet
 device		wpi		# Intel 3945ABG wireless NICs.
+device		axp		# AMD EPYC integrated NIC
 
 # IEEE 802.11 adapter firmware modules
 
@@ -532,6 +533,7 @@ device		tpm
 device		padlock_rng	# VIA Padlock RNG
 device		rdrand_rng	# Intel Bull Mountain RNG
 device		aesni		# AES-NI OpenCrypto module
+device		ossl		# OpenSSL OpenCrypto module
 device		ioat		# Intel I/OAT DMA engine
 
 #

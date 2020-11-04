@@ -3349,6 +3349,10 @@ mlx5e_ioctl(struct ifnet *ifp, u_long command, caddr_t data)
 			ifp->if_capenable ^= IFCAP_TXTLS4;
 		if (mask & IFCAP_TXTLS6)
 			ifp->if_capenable ^= IFCAP_TXTLS6;
+#ifdef RATELIMIT
+		if (mask & IFCAP_TXTLS_RTLMT)
+			ifp->if_capenable ^= IFCAP_TXTLS_RTLMT;
+#endif
 		if (mask & IFCAP_RXCSUM)
 			ifp->if_capenable ^= IFCAP_RXCSUM;
 		if (mask & IFCAP_RXCSUM_IPV6)
@@ -4122,7 +4126,7 @@ mlx5e_snd_tag_alloc(struct ifnet *ifp,
 #ifdef RATELIMIT
 	case IF_SND_TAG_TYPE_RATE_LIMIT:
 		return (mlx5e_rl_snd_tag_alloc(ifp, params, ppmt));
-#if defined(KERN_TLS) && defined(IF_SND_TAG_TYPE_TLS_RATE_LIMIT)
+#ifdef KERN_TLS
 	case IF_SND_TAG_TYPE_TLS_RATE_LIMIT:
 		return (mlx5e_tls_snd_tag_alloc(ifp, params, ppmt));
 #endif
@@ -4146,7 +4150,7 @@ mlx5e_snd_tag_modify(struct m_snd_tag *pmt, union if_snd_tag_modify_params *para
 #ifdef RATELIMIT
 	case IF_SND_TAG_TYPE_RATE_LIMIT:
 		return (mlx5e_rl_snd_tag_modify(pmt, params));
-#if defined(KERN_TLS) && defined(IF_SND_TAG_TYPE_TLS_RATE_LIMIT)
+#ifdef KERN_TLS
 	case IF_SND_TAG_TYPE_TLS_RATE_LIMIT:
 		return (mlx5e_tls_snd_tag_modify(pmt, params));
 #endif
@@ -4168,7 +4172,7 @@ mlx5e_snd_tag_query(struct m_snd_tag *pmt, union if_snd_tag_query_params *params
 #ifdef RATELIMIT
 	case IF_SND_TAG_TYPE_RATE_LIMIT:
 		return (mlx5e_rl_snd_tag_query(pmt, params));
-#if defined(KERN_TLS) && defined(IF_SND_TAG_TYPE_TLS_RATE_LIMIT)
+#ifdef KERN_TLS
 	case IF_SND_TAG_TYPE_TLS_RATE_LIMIT:
 		return (mlx5e_tls_snd_tag_query(pmt, params));
 #endif
@@ -4237,7 +4241,7 @@ mlx5e_snd_tag_free(struct m_snd_tag *pmt)
 	case IF_SND_TAG_TYPE_RATE_LIMIT:
 		mlx5e_rl_snd_tag_free(pmt);
 		break;
-#if defined(KERN_TLS) && defined(IF_SND_TAG_TYPE_TLS_RATE_LIMIT)
+#ifdef KERN_TLS
 	case IF_SND_TAG_TYPE_TLS_RATE_LIMIT:
 		mlx5e_tls_snd_tag_free(pmt);
 		break;
@@ -4320,7 +4324,9 @@ mlx5e_create_ifp(struct mlx5_core_dev *mdev)
 	ifp->if_capabilities |= IFCAP_HWSTATS | IFCAP_HWRXTSTMP;
 	ifp->if_capabilities |= IFCAP_NOMAP;
 	ifp->if_capabilities |= IFCAP_TXTLS4 | IFCAP_TXTLS6;
-	ifp->if_capabilities |= IFCAP_TXRTLMT;
+#ifdef RATELIMIT
+	ifp->if_capabilities |= IFCAP_TXRTLMT | IFCAP_TXTLS_RTLMT;
+#endif
 	ifp->if_snd_tag_alloc = mlx5e_snd_tag_alloc;
 	ifp->if_snd_tag_free = mlx5e_snd_tag_free;
 	ifp->if_snd_tag_modify = mlx5e_snd_tag_modify;

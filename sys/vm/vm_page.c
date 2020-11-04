@@ -108,6 +108,7 @@ __FBSDID("$FreeBSD$");
 #include <vm/vm_radix.h>
 #include <vm/vm_reserv.h>
 #include <vm/vm_extern.h>
+#include <vm/vm_dumpset.h>
 #include <vm/uma.h>
 #include <vm/uma_int.h>
 
@@ -1695,6 +1696,21 @@ vm_page_lookup(vm_object_t object, vm_pindex_t pindex)
 
 	VM_OBJECT_ASSERT_LOCKED(object);
 	return (vm_radix_lookup(&object->rtree, pindex));
+}
+
+/*
+ *	vm_page_lookup_unlocked:
+ *
+ *	Returns the page associated with the object/offset pair specified;
+ *	if none is found, NULL is returned.  The page may be no longer be
+ *	present in the object at the time that this function returns.  Only
+ *	useful for opportunistic checks such as inmem().
+ */
+vm_page_t
+vm_page_lookup_unlocked(vm_object_t object, vm_pindex_t pindex)
+{
+
+	return (vm_radix_lookup_unlocked(&object->rtree, pindex));
 }
 
 /*

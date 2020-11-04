@@ -502,6 +502,13 @@ namei(struct nameidata *ndp)
 	cnp = &ndp->ni_cnd;
 	td = cnp->cn_thread;
 #ifdef INVARIANTS
+	KASSERT((ndp->ni_debugflags & NAMEI_DBG_CALLED) == 0,
+	    ("%s: repeated call to namei without NDREINIT", __func__));
+	KASSERT(ndp->ni_debugflags == NAMEI_DBG_INITED,
+	    ("%s: bad debugflags %d", __func__, ndp->ni_debugflags));
+	ndp->ni_debugflags |= NAMEI_DBG_CALLED;
+	if (ndp->ni_startdir != NULL)
+		ndp->ni_debugflags |= NAMEI_DBG_HADSTARTDIR;
 	/*
 	 * For NDVALIDATE.
 	 *
@@ -511,6 +518,8 @@ namei(struct nameidata *ndp)
 	cnp->cn_origflags = cnp->cn_flags;
 #endif
 	ndp->ni_cnd.cn_cred = ndp->ni_cnd.cn_thread->td_ucred;
+	KASSERT(ndp->ni_resflags == 0, ("%s: garbage in ni_resflags: %x\n",
+	    __func__, ndp->ni_resflags));
 	KASSERT(cnp->cn_cred && td->td_proc, ("namei: bad cred/proc"));
 	KASSERT((cnp->cn_flags & NAMEI_INTERNAL_FLAGS) == 0,
 	    ("namei: unexpected flags: %" PRIx64 "\n",
@@ -595,8 +604,17 @@ namei(struct nameidata *ndp)
 	for (;;) {
 		ndp->ni_startdir = dp;
 		error = lookup(ndp);
-		if (error != 0)
+		if (error != 0) {
+			/*
+			 * Override an error to not allow user to use
+			 * BENEATH as an oracle.
+			 */
+			if ((ndp->ni_lcf & (NI_LCF_LATCH |
+			    NI_LCF_BENEATH_LATCHED)) == NI_LCF_LATCH)
+				error = ENOTCAPABLE;
 			goto out;
+		}
+
 		/*
 		 * If not a symbolic link, we're done.
 		 */

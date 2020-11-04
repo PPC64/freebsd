@@ -1783,6 +1783,7 @@ tcp_newtcpcb(struct inpcb *inp)
 	/* Initialize the per-TCPCB log data. */
 	tcp_log_tcpcbinit(tp);
 #endif
+	tp->t_pacing_rate = -1;
 	if (tp->t_fb->tfb_tcp_fb_init) {
 		if ((*tp->t_fb->tfb_tcp_fb_init)(tp)) {
 			refcount_release(&tp->t_fb->tfb_refcnt);
@@ -3437,6 +3438,13 @@ tcp_inptoxtp(const struct inpcb *inp, struct xtcpcb *xt)
 		xt->t_sndzerowin = tp->t_sndzerowin;
 		xt->t_sndrexmitpack = tp->t_sndrexmitpack;
 		xt->t_rcvoopack = tp->t_rcvoopack;
+		xt->t_rcv_wnd = tp->rcv_wnd;
+		xt->t_snd_wnd = tp->snd_wnd;
+		xt->t_snd_cwnd = tp->snd_cwnd;
+		xt->t_snd_ssthresh = tp->snd_ssthresh;
+		xt->t_maxseg = tp->t_maxseg;
+		xt->xt_ecn = (tp->t_flags2 & TF2_ECN_PERMIT) ? 1 : 0 +
+			     (tp->t_flags2 & TF2_ACE_PERMIT) ? 2 : 0;
 
 		now = getsbinuptime();
 #define	COPYTIMER(ttt)	do {						\

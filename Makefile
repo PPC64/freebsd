@@ -89,6 +89,15 @@
 # 10.  `reboot'
 # 11.  `make delete-old-libs' (in case no 3rd party program uses them anymore)
 #
+# For individuals wanting to build from source with GCC from ports, first build
+# or install an appropriate flavor of devel/freebsd-gcc9.  The packages produced
+# by this port are named "${TARGET_ARCH}-gcc9" -- note that not all
+# architectures supported by FreeBSD have an external gcc toolchain available.
+#
+# Once the appropriate freebsd-gcc package is installed, simply pass
+# CROSS_TOOLCHAIN=${TARGET_ARCH}-gcc9 while building with the above steps,
+# e.g., `make buildworld CROSS_TOOLCHAIN=amd64-gcc9`.
+#
 # See src/UPDATING `COMMON ITEMS' for more complete information.
 #
 # If TARGET=machine (e.g. powerpc, arm64, ...) is specified you can
@@ -153,8 +162,8 @@ TGTS=	all all-man buildenv buildenvvars buildkernel buildworld \
 	xdev-links native-xtools native-xtools-install stageworld stagekernel \
 	stage-packages stage-packages-kernel stage-packages-world \
 	create-packages-world create-packages-kernel create-packages \
-	packages installconfig real-packages sign-packages package-pkg \
-	print-dir test-system-compiler test-system-linker
+	update-packages packages installconfig real-packages real-update-packages \
+	sign-packages package-pkg print-dir test-system-compiler test-system-linker
 
 # These targets require a TARGET and TARGET_ARCH be defined.
 XTGTS=	native-xtools native-xtools-install xdev xdev-build xdev-install \
@@ -682,13 +691,6 @@ universe_${target}_${target_arch}: universe_${target}_prologue .MAKE .PHONY
 universe_${target}_done: universe_${target}_kernels .PHONY
 universe_${target}_kernels: universe_${target}_worlds .PHONY
 universe_${target}_kernels: universe_${target}_prologue .MAKE .PHONY
-	@if [ -e "${KERNSRCDIR}/${target}/conf/NOTES" ]; then \
-	  (cd ${KERNSRCDIR}/${target}/conf && env __MAKE_CONF=/dev/null \
-	    ${SUB_MAKE} LINT \
-	    > ${.CURDIR}/_.${target}.makeLINT 2>&1 || \
-	    (echo "${target} 'make LINT' failed," \
-	    "check _.${target}.makeLINT for details"| ${MAKEFAIL})); \
-	fi
 	@cd ${.CURDIR}; ${SUB_MAKE} ${.MAKEFLAGS} TARGET=${target} \
 	    universe_kernels
 .endif # ${__DO_KERNELS} == "yes"
@@ -760,9 +762,6 @@ universe_epilogue: .PHONY
 	fi
 .endif
 .endif
-
-buildLINT: .PHONY
-	${MAKE} -C ${.CURDIR}/sys/${_TARGET}/conf LINT
 
 .if defined(.PARSEDIR)
 # This makefile does not run in meta mode

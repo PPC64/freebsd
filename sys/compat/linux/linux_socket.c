@@ -222,6 +222,8 @@ linux_to_bsd_so_sockopt(int opt)
 		return (SO_LINGER);
 	case LINUX_SO_REUSEPORT:
 		return (SO_REUSEPORT_LB);
+	case LINUX_SO_PASSCRED:
+		return (LOCAL_CREDS_PERSISTENT);
 	case LINUX_SO_PEERCRED:
 		return (LOCAL_PEERCRED);
 	case LINUX_SO_RCVLOWAT:
@@ -500,6 +502,17 @@ goout:
 	return (error);
 }
 
+static const char *linux_netlink_names[] = {
+	[LINUX_NETLINK_ROUTE] = "ROUTE",
+	[LINUX_NETLINK_SOCK_DIAG] = "SOCK_DIAG",
+	[LINUX_NETLINK_NFLOG] = "NFLOG",
+	[LINUX_NETLINK_SELINUX] = "SELINUX",
+	[LINUX_NETLINK_AUDIT] = "AUDIT",
+	[LINUX_NETLINK_FIB_LOOKUP] = "FIB_LOOKUP",
+	[LINUX_NETLINK_NETFILTER] = "NETFILTER",
+	[LINUX_NETLINK_KOBJECT_UEVENT] = "KOBJECT_UEVENT",
+};
+
 int
 linux_socket(struct thread *td, struct linux_socket_args *args)
 {
@@ -513,8 +526,32 @@ linux_socket(struct thread *td, struct linux_socket_args *args)
 	if (retval_socket != 0)
 		return (retval_socket);
 	domain = linux_to_bsd_domain(args->domain);
-	if (domain == -1)
+	if (domain == -1) {
+		/* Mask off SOCK_NONBLOCK / CLOEXEC for error messages. */
+		type = args->type & LINUX_SOCK_TYPE_MASK;
+		if (args->domain == LINUX_AF_NETLINK) {
+			const char *nl_name;
+
+			if (args->protocol >= 0 &&
+			    args->protocol < nitems(linux_netlink_names))
+				nl_name = linux_netlink_names[args->protocol];
+			else
+				nl_name = NULL;
+			if (nl_name != NULL)
+				linux_msg(curthread,
+				    "unsupported socket(AF_NETLINK, %d, "
+				    "NETLINK_%s)", type, nl_name);
+			else
+				linux_msg(curthread,
+				    "unsupported socket(AF_NETLINK, %d, %d)",
+				    type, args->protocol);
+		} else {
+			linux_msg(curthread, "unsupported socket domain %d, "
+			    "type %d, protocol %d", args->domain, type,
+			    args->protocol);
+		}
 		return (EAFNOSUPPORT);
+	}
 
 	retval_socket = kern_socket(td, domain, type, args->protocol);
 	if (retval_socket)
@@ -1428,6 +1465,9 @@ linux_setsockopt(struct thread *td, struct linux_setsockopt_args *args)
 	case SOL_SOCKET:
 		name = linux_to_bsd_so_sockopt(args->optname);
 		switch (name) {
+		case LOCAL_CREDS_PERSISTENT:
+			level = SOL_LOCAL;
+			break;
 		case SO_RCVTIMEO:
 			/* FALLTHROUGH */
 		case SO_SNDTIMEO:
@@ -1505,6 +1545,9 @@ linux_getsockopt(struct thread *td, struct linux_getsockopt_args *args)
 	case SOL_SOCKET:
 		name = linux_to_bsd_so_sockopt(args->optname);
 		switch (name) {
+		case LOCAL_CREDS_PERSISTENT:
+			level = SOL_LOCAL;
+			break;
 		case SO_RCVTIMEO:
 			/* FALLTHROUGH */
 		case SO_SNDTIMEO:
@@ -1542,7 +1585,7 @@ linux_getsockopt(struct thread *td, struct linux_getsockopt_args *args)
 			    name, &newval, UIO_SYSSPACE, &len);
 			if (error != 0)
 				return (error);
-			newval = -linux_to_bsd_errno(newval);
+			newval = -bsd_to_linux_errno(newval);
 			return (copyout(&newval, PTRIN(args->optval), len));
 			/* NOTREACHED */
 		default:

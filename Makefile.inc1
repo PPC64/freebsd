@@ -568,12 +568,12 @@ EXTRA_REVISION= _${_BRANCH:C/-PRERELEASE/.p/}
 .elif ${_BRANCH:M*-p*}
 EXTRA_REVISION=	_${_BRANCH:C/.*-p([0-9]+$)/\1/}
 .endif
-PKG_VERSION=	${_REVISION}${EXTRA_REVISION}
+PKG_VERSION:=	${_REVISION}${EXTRA_REVISION}
 .endif
 .endif	# !defined(PKG_VERSION)
 
 .if !defined(PKG_TIMESTAMP)
-TIMEEPOCHNOW=	%s
+TIMEEPOCHNOW=		%s
 SOURCE_DATE_EPOCH=	${TIMEEPOCHNOW:gmtime}
 .else
 SOURCE_DATE_EPOCH=	${PKG_TIMESTAMP}
@@ -1855,8 +1855,21 @@ _pkgbootstrap: .PHONY
 	@env ASSUME_ALWAYS_YES=YES pkg bootstrap
 .endif
 
+.if make(create-world-packages-jobs) || make(create-kernel-packages*) || make(real-update-packages)
+PKG_ABI!=${PKG_CMD} -o ABI_FILE=${WSTAGEDIR}/usr/bin/uname config ABI
+.endif
+
+.if !defined(PKG_VERSION_FROM)
+.if defined(PKG_ABI)
+PKG_VERSION_FROM!=/usr/bin/readlink ${REPODIR}/${PKG_ABI}/latest
+.endif
+.endif
+
 packages: .PHONY
 	${_+_}${MAKE} -C ${.CURDIR} PKG_VERSION=${PKG_VERSION} real-packages
+
+update-packages: .PHONY
+	${_+_}${MAKE} -C ${.CURDIR} PKG_VERSION=${PKG_VERSION} real-update-packages
 
 package-pkg: .PHONY
 	rm -rf /tmp/ports.${TARGET} || :
@@ -1866,6 +1879,28 @@ package-pkg: .PHONY
 		sh ${.CURDIR}/release/scripts/make-pkg-package.sh
 
 real-packages:	stage-packages create-packages sign-packages .PHONY
+
+real-update-packages: stage-packages .PHONY
+	${_+_}${MAKE} -C ${.CURDIR} PKG_VERSION=${PKG_VERSION} create-packages
+	@echo "==> Checking for new packages (comparing ${PKG_VERSION} to ${PKG_VERSION_FROM})"
+	@for pkg in ${REPODIR}/${PKG_ABI}/${PKG_VERSION_FROM}/${PKG_NAME_PREFIX}-*; do \
+	  pkgname=$$(pkg query -F $${pkg} '%n' | sed 's/${PKG_NAME_PREFIX}-\(.*\)/\1/') ; \
+	  newpkgname=${PKG_NAME_PREFIX}-$${pkgname}-${PKG_VERSION}.${PKG_FORMAT} ; \
+	  oldsum=$$(pkg query -F $${pkg} '%X') ; \
+	  if [ ! -f ${REPODIR}/${PKG_ABI}/${PKG_VERSION}/$${newpkgname} ]; then \
+	    continue; \
+	  fi ; \
+	  newsum=$$(pkg query -F ${REPODIR}/${PKG_ABI}/${PKG_VERSION}/$${newpkgname} '%X') ; \
+	  if [ "$${oldsum}" == "$${newsum}" ]; then \
+	   echo "==> Keeping old ${PKG_NAME_PREFIX}-$${pkgname}-${PKG_VERSION_FROM}.${PKG_FORMAT}" ; \
+	   rm ${REPODIR}/${PKG_ABI}/${PKG_VERSION}/$${newpkgname} ; \
+	   cp $${pkg} ${REPODIR}/${PKG_ABI}/${PKG_VERSION} ; \
+	  else \
+	    echo "==> New package $${newpkgname}" ; \
+	  fi ; \
+	done
+	${_+_}@cd ${.CURDIR}; \
+		${MAKE} -f Makefile.inc1 PKG_VERSION=${PKG_VERSION} sign-packages
 
 stage-packages-world: .PHONY
 	@mkdir -p ${WSTAGEDIR}
@@ -1915,10 +1950,6 @@ create-world-packages:	_pkgbootstrap .PHONY
 
 .if make(create-world-packages-jobs)
 .include "${WSTAGEDIR}/packages.mk"
-.endif
-
-.if make(create-world-packages-jobs) || make(create-kernel-packages*)
-PKG_ABI!=${PKG_CMD} -o ABI_FILE=${WSTAGEDIR}/usr/bin/uname config ABI
 .endif
 
 create-world-packages-jobs: .PHONY
@@ -2330,7 +2361,10 @@ _basic_bootstrap_tools+=usr.bin/ldd
 .endif
 # sysctl/chflags are required for installkernel:
 .if !defined(CROSSBUILD_HOST)
-_basic_bootstrap_tools+=sbin/sysctl bin/chflags
+_basic_bootstrap_tools+=bin/chflags
+# Note: sysctl does not bootstrap on FreeBSD < 13 anymore, but that doesn't
+# matter since we don't need any of the new features for the build.
+_bootstrap_tools_links+=sysctl
 .else
 # When building on non-FreeBSD, install a fake chflags instead since the
 # version from the source tree cannot work. We also don't need sysctl since we
@@ -2339,6 +2373,8 @@ _other_bootstrap_tools+=tools/build/cross-build/fake_chflags
 .endif
 # mkfifo is used by sys/conf/newvers.sh
 _basic_bootstrap_tools+=usr.bin/mkfifo
+# jot is needed for the mkimg tests
+_basic_bootstrap_tools+=usr.bin/jot
 
 .if ${MK_BOOT} != "no"
 # md5 is used by boot/beri (and possibly others)
@@ -2824,6 +2860,7 @@ _prebuild_libs=	${_kerberos5_lib_libasn1} \
 		lib/libelf lib/libexpat \
 		lib/libfigpar \
 		${_lib_libgssapi} \
+		lib/libjail \
 		lib/libkiconv lib/libkvm lib/liblzma lib/libmd lib/libnv \
 		lib/libzstd \
 		${_lib_casper} \

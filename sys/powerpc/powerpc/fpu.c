@@ -195,6 +195,9 @@ save_fpu(struct thread *td)
 	 */
 	pcb->pcb_fpcpu = INT_MAX;
 	PCPU_SET(fputhread, NULL);
+
+	/* Clear Floating Point Status and Control Register */
+	cleanup_fpscr();
 }
 
 /*

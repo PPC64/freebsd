@@ -336,8 +336,11 @@ sys_sigreturn(struct thread *td, struct sigreturn_args *uap)
 
 	kern_sigprocmask(td, SIG_SETMASK, &uc.uc_sigmask, NULL, 0);
 
-	/* Save FPU state. User may have changed it on signal handler */
-	if (td->td_pcb->pcb_flags & PCB_FPU)
+	/* 
+	 * Save FPU state if needed. User may have changed it on
+	 * signal handler 
+	 */ 
+	if (uc.uc_mcontext.mc_srr1 & PSL_FP)
 		save_fpu(td);
 
 	CTR3(KTR_SIG, "sigreturn: return td=%p pc=%#x sp=%#x",

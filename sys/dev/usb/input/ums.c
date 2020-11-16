@@ -82,6 +82,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/mouse.h>
 
 #ifdef USB_DEBUG
+/* Change this to 9 (or higher) to enable most debug messages */
 static int ums_debug = 0;
 
 static SYSCTL_NODE(_hw_usb, OID_AUTO, ums, CTLFLAG_RW | CTLFLAG_MPSAFE, 0,
@@ -91,7 +92,10 @@ SYSCTL_INT(_hw_usb_ums, OID_AUTO, debug, CTLFLAG_RWTUN,
 #endif
 
 #define	MOUSE_FLAGS_MASK (HIO_CONST|HIO_RELATIVE)
-#define	MOUSE_FLAGS (HIO_RELATIVE)
+#define	MOUSE_FLAGS (0)
+
+/* 5 is bit faster than host, 6 is a bit slower */
+#define	SCALE_DOWN(x)	((x)>>5)
 
 #define	UMS_BUF_SIZE      8		/* bytes */
 #define	UMS_IFQ_MAXLEN   50		/* units */
@@ -139,6 +143,7 @@ struct ums_softc {
 	mousehw_t sc_hw;
 	mousemode_t sc_mode;
 	mousestatus_t sc_status;
+	int x, y;
 
 	struct usb_xfer *sc_xfer[UMS_N_TRANSFER];
 
@@ -231,6 +236,7 @@ ums_intr_callback(struct usb_xfer *xfer, usb_error_t error)
 	int32_t dy = 0;
 	int32_t dz = 0;
 	int32_t dt = 0;
+	int32_t x, y;
 	uint8_t i;
 	uint8_t id;
 	int len;
@@ -280,12 +286,18 @@ ums_intr_callback(struct usb_xfer *xfer, usb_error_t error)
 			dw += hid_get_data(buf, len, &info->sc_loc_w);
 
 		if ((info->sc_flags & UMS_FLAG_X_AXIS) && 
-		    (id == info->sc_iid_x))
-			dx += hid_get_data(buf, len, &info->sc_loc_x);
+		    (id == info->sc_iid_x)) {
+			x = hid_get_data(buf, len, &info->sc_loc_x);
+			dx += SCALE_DOWN(x - sc->x);
+			sc->x = x;
+		}
 
 		if ((info->sc_flags & UMS_FLAG_Y_AXIS) &&
-		    (id == info->sc_iid_y))
-			dy -= hid_get_data(buf, len, &info->sc_loc_y);
+		    (id == info->sc_iid_y)) {
+			y = hid_get_data(buf, len, &info->sc_loc_y);
+			dy -= SCALE_DOWN(y - sc->y);
+			sc->y = y;
+		}
 
 		if ((info->sc_flags & UMS_FLAG_Z_AXIS) &&
 		    (id == info->sc_iid_z)) {
@@ -327,7 +339,8 @@ ums_intr_callback(struct usb_xfer *xfer, usb_error_t error)
 
 		if (dx || dy || dz || dt || dw ||
 		    (buttons != sc->sc_status.button)) {
-			DPRINTFN(6, "x:%d y:%d z:%d t:%d w:%d buttons:0x%08x\n",
+			DPRINTFN(6, "x:%d y:%d\n", sc->x, sc->y);
+			DPRINTFN(6, "dx:%d dy:%d dz:%d dt:%d dw:%d buttons:0x%08x\n",
 			    dx, dy, dz, dt, dw, buttons);
 
 			/* translate T-axis into button presses until further */
@@ -343,6 +356,7 @@ ums_intr_callback(struct usb_xfer *xfer, usb_error_t error)
 			sc->sc_status.dx += dx;
 			sc->sc_status.dy += dy;
 			sc->sc_status.dz += dz;
+			DPRINTFN(6, "x:%d y:%d\n", sc->x, sc->y);
 			/*
 			 * sc->sc_status.dt += dt;
 			 * no way to export this yet
@@ -809,6 +823,8 @@ ums_reset(struct ums_softc *sc)
 	sc->sc_status.dx = 0;
 	sc->sc_status.dy = 0;
 	sc->sc_status.dz = 0;
+	sc->x = 0;
+	sc->y = 0;
 	/* sc->sc_status.dt = 0; */
 }
 

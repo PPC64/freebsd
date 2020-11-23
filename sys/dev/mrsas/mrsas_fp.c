@@ -1337,8 +1337,6 @@ mrsas_update_load_balance_params(struct mrsas_softc *sc,
 		}
 		raid = MR_LdRaidGet(ld, drv_map);
 		le32_to_cpus(&raid->capability);
-		//*((u_int32_t *)&raid->capability) =
-		//    le32toh(*((u_int32_t *)&raid->capability));
 		if ((raid->level != 1) ||
 		    (raid->ldState != MR_LD_STATE_OPTIMAL)) {
 			lbInfo[ldCount].loadBalanceFlag = 0;

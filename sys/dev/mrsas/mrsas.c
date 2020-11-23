@@ -3114,6 +3114,7 @@ mrsas_ocr_thread(void *arg)
 
 	sc = (struct mrsas_softc *)arg;
 
+	mrsas_dprint(sc, MRSAS_TRACE, "%s\n", __func__);
 	sc->ocr_thread_active = 1;
 	mtx_lock(&sc->sim_lock);
 	for (;;) {
@@ -4587,6 +4588,7 @@ mrsas_get_pd_list(struct mrsas_softc *sc)
 	struct MR_PD_ADDRESS *pd_addr;
 	bus_addr_t pd_list_phys_addr = 0;
 	struct mrsas_tmp_dcmd *tcmd;
+	u_int16_t dev_id;
 
 	cmd = mrsas_get_mfi_cmd(sc);
 	if (!cmd) {
@@ -4639,13 +4641,14 @@ mrsas_get_pd_list(struct mrsas_softc *sc)
 		memset(sc->local_pd_list, 0,
 		    MRSAS_MAX_PD * sizeof(struct mrsas_pd_list));
 		for (pd_index = 0; pd_index < le32toh(pd_list_mem->count); pd_index++) {
-			sc->local_pd_list[le16toh(pd_addr->deviceId)].tid = le16toh(pd_addr->deviceId);
-			sc->local_pd_list[le16toh(pd_addr->deviceId)].driveType =
+			dev_id = le16toh(pd_addr->deviceId);
+			sc->local_pd_list[dev_id].tid = dev_id;
+			sc->local_pd_list[dev_id].driveType =
 			    le16toh(pd_addr->scsiDevType);
-			sc->local_pd_list[le16toh(pd_addr->deviceId)].driveState =
+			sc->local_pd_list[dev_id].driveState =
 			    MR_PD_STATE_SYSTEM;
-			if (sc->target_list[le16toh(pd_addr->deviceId)].target_id == 0xffff)
-				mrsas_add_target(sc, le16toh(pd_addr->deviceId));
+			if (sc->target_list[dev_id].target_id == 0xffff)
+				mrsas_add_target(sc, dev_id);
 			pd_addr++;
 		}
 		for (pd_index = 0; pd_index < MRSAS_MAX_PD; pd_index++) {

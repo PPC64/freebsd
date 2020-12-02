@@ -121,6 +121,11 @@ vt_fb_ioctl(struct vt_device *vd, u_long cmd, caddr_t data, struct thread *td)
 		vd->vd_driver->vd_blank(vd, TC_BLACK);
 		break;
 
+	case FBIO_GETRGBOFFS:
+		memcpy((struct fb_rgboffs *)data, &info->fb_rgboffs,
+		    sizeof(struct fb_rgboffs));
+		break;
+
 	default:
 		error = ENOIOCTL;
 		break;

@@ -50,12 +50,60 @@ __FBSDID("$FreeBSD$");
 #include <ufs/ufs/dir.h>
 #include <ufs/ffs/fs.h>
 
+#include <sys/endian.h>
+
+#define FS_BSWAP16(v) (fs_swap ? bswap16(v) : (v))
+#define FS_BSWAP32(v) (fs_swap ? bswap32(v) : (v))
+#define FS_BSWAP64(v) (fs_swap ? bswap64(v) : (v))
+
+#undef fsbtodb
+#define	fsbtodb(fs, b)	((daddr_t)(b) << FS_BSWAP32((fs)->fs_fsbtodb))
+
+#undef cgbase
+#define	cgbase(fs, c)	(((ufs2_daddr_t)FS_BSWAP32((fs)->fs_fpg)) * (c))
+
+#undef cgstart
+#define	cgstart(fs, c)							\
+       (FS_BSWAP32((fs)->fs_magic) == FS_UFS2_MAGIC ? cgbase(fs, c) :		\
+       (cgbase(fs, c) + FS_BSWAP32((fs)->fs_old_cgoffset) * ((c) & ~FS_BSWAP32(((fs)->fs_old_cgmask)))))
+
+#undef cgimin
+#define	cgimin(fs, c)	(cgstart(fs, c) + FS_BSWAP32((fs)->fs_iblkno))	/* inode blk */
+
+#undef ino_to_cg
+#define	ino_to_cg(fs, x)	(((ino_t)(x)) / FS_BSWAP32((fs)->fs_ipg))
+
+#undef lblkno
+#define	lblkno(fs, loc)		/* calculates (loc / fs->fs_bsize) */ \
+	((loc) >> FS_BSWAP32((fs)->fs_bshift))
+
+#undef blkoff
+#define	blkoff(fs, loc)		/* calculates (loc % fs->fs_bsize) */ \
+	((loc) & FS_BSWAP64((fs)->fs_qbmask))
+
+#undef NINDIR
+#define	NINDIR(fs)	(FS_BSWAP32((fs)->fs_nindir))
+
+#undef fragroundup
+#define	fragroundup(fs, size)	/* calculates roundup(size, fs->fs_fsize) */ \
+	(((size) + FS_BSWAP64((fs)->fs_qfmask)) & FS_BSWAP32((fs)->fs_fmask))
+
+#undef sblksize
+#define	sblksize(fs, size, lbn) \
+	(((lbn) >= UFS_NDADDR || (size) >= ((lbn) + 1) << FS_BSWAP32((fs)->fs_bshift)) \
+	  ? FS_BSWAP32((fs)->fs_bsize) \
+	  : (fragroundup(fs, blkoff(fs, (size)))))
+
+#undef INOPB
+#define	INOPB(fs)	FS_BSWAP32((fs)->fs_inopb)
+
+
 #ifdef UFS_SMALL_CGBASE
 /* XXX: Revert to old (broken for over 1.5Tb filesystems) version of cgbase
    (see sys/ufs/ffs/fs.h rev 1.39) so that small boot loaders (e.g. boot2) can
    support both UFS1 and UFS2. */
 #undef cgbase
-#define cgbase(fs, c)   ((ufs2_daddr_t)((fs)->fs_fpg * (c)))
+#define cgbase(fs, c)   ((ufs2_daddr_t)(FS_BSWAP32((fs)->fs_fpg) * (c)))
 #endif
 
 typedef	uint32_t	ufs_ino_t;
@@ -68,11 +116,11 @@ typedef	uint32_t	ufs_ino_t;
 #define VBLKSIZE	(1 << VBLKSHIFT)
 #define VBLKMASK	(VBLKSIZE - 1)
 #define DBPERVBLK	(VBLKSIZE / DEV_BSIZE)
-#define INDIRPERVBLK(fs) (NINDIR(fs) / ((fs)->fs_bsize >> VBLKSHIFT))
-#define IPERVBLK(fs)	(INOPB(fs) / ((fs)->fs_bsize >> VBLKSHIFT))
+#define INDIRPERVBLK(fs) (NINDIR(fs) / (FS_BSWAP32((fs)->fs_bsize) >> VBLKSHIFT))
+#define IPERVBLK(fs)	(INOPB(fs) / (FS_BSWAP32((fs)->fs_bsize) >> VBLKSHIFT))
 #define INO_TO_VBA(fs, ipervblk, x) \
     (fsbtodb(fs, cgimin(fs, ino_to_cg(fs, x))) + \
-    (((x) % (fs)->fs_ipg) / (ipervblk) * DBPERVBLK))
+    (((x) % FS_BSWAP32((fs)->fs_ipg)) / (ipervblk) * DBPERVBLK))
 #define INO_TO_VBO(ipervblk, x) ((x) % ipervblk)
 #define FS_TO_VBA(fs, fsb, off) (fsbtodb(fs, fsb) + \
     ((off) / VBLKSIZE) * DBPERVBLK)
@@ -92,6 +140,7 @@ static ssize_t fsread(ufs_ino_t, void *, size_t);
 
 static uint8_t ls, dsk_meta;
 static uint32_t fs_off;
+static char fs_swap;
 
 static __inline uint8_t
 fsfind(const char *name, ufs_ino_t * ino)
@@ -102,19 +151,19 @@ fsfind(const char *name, ufs_ino_t * ino)
 	ssize_t n;
 
 	fs_off = 0;
+	printf("fsread(*ino=0x%x, buf=%p, DEV_BSIZE=%d)\n", *ino, buf, DEV_BSIZE);
 	while ((n = fsread(*ino, buf, DEV_BSIZE)) > 0)
 		for (s = buf; s < buf + DEV_BSIZE;) {
 			memcpy(&d, s, sizeof(struct direct));
-			if (ls)
-				printf("%s ", d.d_name);
-			else if (!strcmp(name, d.d_name)) {
-				*ino = d.d_ino;
+			printf("%s ", d.d_name);
+			if (!strcmp(name, d.d_name)) {
+				*ino = FS_BSWAP32(d.d_ino);
+				printf("\n");
 				return d.d_type;
 			}
-			s += d.d_reclen;
+			s += FS_BSWAP16(d.d_reclen);
 		}
-	if (n != -1 && ls)
-		printf("\n");
+	printf("\n");
 	return 0;
 }
 
@@ -144,6 +193,7 @@ lookup(const char *path)
 			printf("%s: not a directory.\n", name);
 			return (0);
 		}
+		printf("fsfind(name=[%s])\n", name);
 		if ((dt = fsfind(name, &ino)) <= 0)
 			break;
 		path = s;
@@ -158,10 +208,19 @@ static int sblock_try[] = SBLOCKSEARCH;
 
 #if defined(UFS2_ONLY)
 #define DIP(field) dp2.field
+#define DIP32(field) FS_BSWAP32(dp2.field)
+#define DIP64(field) FS_BSWAP64(dp2.field)
+#define DIP32_64(field) FS_BSWAP64(dp2.field)
 #elif defined(UFS1_ONLY)
 #define DIP(field) dp1.field
+#define DIP32(field) FS_BSWAP32(dp1.field)
+#define DIP64(field) FS_BSWAP64(dp1.field)
+#define DIP32_64(field) FS_BSWAP32(dp1.field)
 #else
-#define DIP(field) fs.fs_magic == FS_UFS1_MAGIC ? dp1.field : dp2.field
+#define DIP(field) FS_BSWAP32(fs.fs_magic) == FS_UFS1_MAGIC ? dp1.field : dp2.field
+#define DIP32(field) FS_BSWAP32(fs.fs_magic) == FS_UFS1_MAGIC ? FS_BSWAP32(dp1.field) : FS_BSWAP32(dp2.field)
+#define DIP64(field) FS_BSWAP32(fs.fs_magic) == FS_UFS1_MAGIC ? FS_BSWAP64(dp1.field) : FS_BSWAP64(dp2.field)
+#define DIP32_64(field) FS_BSWAP32(fs.fs_magic) == FS_UFS1_MAGIC ? FS_BSWAP32(dp1.field) : FS_BSWAP64(dp2.field)
 #endif
 
 static ssize_t
@@ -220,6 +279,24 @@ fsread_size(ufs_ino_t inode, void *buf, size_t nbyte, size_t *fsizep)
 			    fs.fs_bsize <= MAXBSIZE &&
 			    fs.fs_bsize >= (int32_t)sizeof(struct fs))
 				break;
+			else if ((
+#if defined(UFS1_ONLY)
+			    bswap32(fs.fs_magic) == FS_UFS1_MAGIC
+#elif defined(UFS2_ONLY)
+			    (bswap32(fs.fs_magic) == FS_UFS2_MAGIC &&
+			    bswap64(fs.fs_sblockloc) == sblock_try[n])
+#else
+			    bswap32(fs.fs_magic) == FS_UFS1_MAGIC ||
+			    (bswap32(fs.fs_magic) == FS_UFS2_MAGIC &&
+			    bswap64(fs.fs_sblockloc) == sblock_try[n])
+#endif
+			    ) &&
+			    bswap32(fs.fs_bsize) <= MAXBSIZE &&
+			    bswap32(fs.fs_bsize) >= (int32_t)sizeof(struct fs)) {
+				fs_swap = 1;
+				break;
+			}
+
 		}
 		if (sblock_try[n] == -1) {
 			return -1;
@@ -231,9 +308,12 @@ fsread_size(ufs_ino_t inode, void *buf, size_t nbyte, size_t *fsizep)
 		return 0;
 	if (inomap != inode) {
 		n = IPERVBLK(&fs);
+		printf("dskread(blkbuf, INO_TO_VBA(&fs, n=%d, inode=0x%x)=0x%x, DBPERVBLK=%d)\n",
+			n, inode, INO_TO_VBA(&fs, n, inode), DBPERVBLK);
 		if (dskread(blkbuf, INO_TO_VBA(&fs, n, inode), DBPERVBLK))
 			return -1;
 		n = INO_TO_VBO(n, inode);
+		printf("INO_TO_VBO=0x%x\n", INO_TO_VBO(n, inode));
 #if defined(UFS1_ONLY)
 		memcpy(&dp1, (struct ufs1_dinode *)(void *)blkbuf + n,
 		    sizeof(dp1));
@@ -241,7 +321,7 @@ fsread_size(ufs_ino_t inode, void *buf, size_t nbyte, size_t *fsizep)
 		memcpy(&dp2, (struct ufs2_dinode *)(void *)blkbuf + n,
 		    sizeof(dp2));
 #else
-		if (fs.fs_magic == FS_UFS1_MAGIC)
+		if (FS_BSWAP32(fs.fs_magic) == FS_UFS1_MAGIC)
 			memcpy(&dp1, (struct ufs1_dinode *)(void *)blkbuf + n,
 			    sizeof(dp1));
 		else
@@ -253,8 +333,9 @@ fsread_size(ufs_ino_t inode, void *buf, size_t nbyte, size_t *fsizep)
 		blkmap = indmap = 0;
 	}
 	s = buf;
-	size = DIP(di_size);
+	size = DIP64(di_size);
 	n = size - fs_off;
+	printf("size=%ld n=%ld\n", size, n);
 	if (nbyte > n)
 		nbyte = n;
 	nb = nbyte;
@@ -262,10 +343,10 @@ fsread_size(ufs_ino_t inode, void *buf, size_t nbyte, size_t *fsizep)
 		lbn = lblkno(&fs, fs_off);
 		off = blkoff(&fs, fs_off);
 		if (lbn < UFS_NDADDR) {
-			addr2 = DIP(di_db[lbn]);
+			addr2 = DIP32_64(di_db[lbn]);
 		} else if (lbn < UFS_NDADDR + NINDIR(&fs)) {
 			n = INDIRPERVBLK(&fs);
-			addr2 = DIP(di_ib[0]);
+			addr2 = DIP32_64(di_ib[0]);
 			u = (u_int)(lbn - UFS_NDADDR) / n * DBPERVBLK;
 			vbaddr = fsbtodb(&fs, addr2) + u;
 			if (indmap != vbaddr) {
@@ -277,18 +358,21 @@ fsread_size(ufs_ino_t inode, void *buf, size_t nbyte, size_t *fsizep)
 #if defined(UFS1_ONLY)
 			memcpy(&addr1, (ufs1_daddr_t *)indbuf + n,
 			    sizeof(ufs1_daddr_t));
-			addr2 = addr1;
+			addr2 = FS_BSWAP32(addr1);
 #elif defined(UFS2_ONLY)
 			memcpy(&addr2, (ufs2_daddr_t *)indbuf + n,
 			    sizeof(ufs2_daddr_t));
+			addr2 = FS_BSWAP64(addr2);
 #else
-			if (fs.fs_magic == FS_UFS1_MAGIC) {
+			if (FS_BSWAP32(fs.fs_magic) == FS_UFS1_MAGIC) {
 				memcpy(&addr1, (ufs1_daddr_t *)indbuf + n,
 				    sizeof(ufs1_daddr_t));
-				addr2 = addr1;
-			} else
+				addr2 = FS_BSWAP32(addr1);
+			} else {
 				memcpy(&addr2, (ufs2_daddr_t *)indbuf + n,
 				    sizeof(ufs2_daddr_t));
+				addr2 = FS_BSWAP64(addr2);
+			}
 #endif
 		} else
 			return -1;

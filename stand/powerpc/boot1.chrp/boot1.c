@@ -388,6 +388,7 @@ strcmp(const char *s1, const char *s2)
 	return ((u_char)*s1 - (u_char)*s2);
 }
 
+#define UFS_BSWAP		1
 #include "ufsread.c"
 
 int

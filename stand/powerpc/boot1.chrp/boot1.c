@@ -452,7 +452,7 @@ main(int ac, char **av)
 	}
 
 	if (i >= 16)
-		panic("do_DBG0");
+		panic("domount");
 
 out:
 	printf("   Boot volume:   %s\n",bootpath_full);

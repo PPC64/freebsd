@@ -151,19 +151,19 @@ fsfind(const char *name, ufs_ino_t * ino)
 	ssize_t n;
 
 	fs_off = 0;
-	printf("fsread(*ino=0x%x, buf=%p, DEV_BSIZE=%d)\n", *ino, buf, DEV_BSIZE);
 	while ((n = fsread(*ino, buf, DEV_BSIZE)) > 0)
 		for (s = buf; s < buf + DEV_BSIZE;) {
 			memcpy(&d, s, sizeof(struct direct));
-			printf("%s ", d.d_name);
-			if (!strcmp(name, d.d_name)) {
+			if (ls)
+				printf("%s ", d.d_name);
+			else if (!strcmp(name, d.d_name)) {
 				*ino = FS_BSWAP32(d.d_ino);
-				printf("\n");
 				return d.d_type;
 			}
 			s += FS_BSWAP16(d.d_reclen);
 		}
-	printf("\n");
+	if (n != -1 && ls)
+		printf("\n");
 	return 0;
 }
 
@@ -193,7 +193,6 @@ lookup(const char *path)
 			printf("%s: not a directory.\n", name);
 			return (0);
 		}
-		printf("fsfind(name=[%s])\n", name);
 		if ((dt = fsfind(name, &ino)) <= 0)
 			break;
 		path = s;
@@ -208,19 +207,19 @@ static int sblock_try[] = SBLOCKSEARCH;
 
 #if defined(UFS2_ONLY)
 #define DIP(field) dp2.field
-#define DIP32(field) FS_BSWAP32(dp2.field)
 #define DIP64(field) FS_BSWAP64(dp2.field)
 #define DIP32_64(field) FS_BSWAP64(dp2.field)
 #elif defined(UFS1_ONLY)
 #define DIP(field) dp1.field
-#define DIP32(field) FS_BSWAP32(dp1.field)
 #define DIP64(field) FS_BSWAP64(dp1.field)
 #define DIP32_64(field) FS_BSWAP32(dp1.field)
 #else
-#define DIP(field) FS_BSWAP32(fs.fs_magic) == FS_UFS1_MAGIC ? dp1.field : dp2.field
-#define DIP32(field) FS_BSWAP32(fs.fs_magic) == FS_UFS1_MAGIC ? FS_BSWAP32(dp1.field) : FS_BSWAP32(dp2.field)
-#define DIP64(field) FS_BSWAP32(fs.fs_magic) == FS_UFS1_MAGIC ? FS_BSWAP64(dp1.field) : FS_BSWAP64(dp2.field)
-#define DIP32_64(field) FS_BSWAP32(fs.fs_magic) == FS_UFS1_MAGIC ? FS_BSWAP32(dp1.field) : FS_BSWAP64(dp2.field)
+#define DIP(field) FS_BSWAP32(fs.fs_magic) == FS_UFS1_MAGIC ? \
+	dp1.field : dp2.field
+#define DIP64(field) FS_BSWAP32(fs.fs_magic) == FS_UFS1_MAGIC ? \
+	FS_BSWAP64(dp1.field) : FS_BSWAP64(dp2.field)
+#define DIP32_64(field) FS_BSWAP32(fs.fs_magic) == FS_UFS1_MAGIC ? \
+	FS_BSWAP32(dp1.field) : FS_BSWAP64(dp2.field)
 #endif
 
 static ssize_t
@@ -308,12 +307,9 @@ fsread_size(ufs_ino_t inode, void *buf, size_t nbyte, size_t *fsizep)
 		return 0;
 	if (inomap != inode) {
 		n = IPERVBLK(&fs);
-		printf("dskread(blkbuf, INO_TO_VBA(&fs, n=%d, inode=0x%x)=0x%x, DBPERVBLK=%d)\n",
-			n, inode, INO_TO_VBA(&fs, n, inode), DBPERVBLK);
 		if (dskread(blkbuf, INO_TO_VBA(&fs, n, inode), DBPERVBLK))
 			return -1;
 		n = INO_TO_VBO(n, inode);
-		printf("INO_TO_VBO=0x%x\n", INO_TO_VBO(n, inode));
 #if defined(UFS1_ONLY)
 		memcpy(&dp1, (struct ufs1_dinode *)(void *)blkbuf + n,
 		    sizeof(dp1));
@@ -335,7 +331,6 @@ fsread_size(ufs_ino_t inode, void *buf, size_t nbyte, size_t *fsizep)
 	s = buf;
 	size = DIP64(di_size);
 	n = size - fs_off;
-	printf("size=%ld n=%ld\n", size, n);
 	if (nbyte > n)
 		nbyte = n;
 	nb = nbyte;

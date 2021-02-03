@@ -9,7 +9,7 @@ INSTALLFLAGS=   -b
 FILES=		boot1.hfs
 SRCS=		boot1.c ashldi3.c syncicache.c
 
-CFLAGS+=-I${LDRSRC} -g
+CFLAGS+=-I${LDRSRC}
 # Load boot1.elf below kernel.
 #
 # Due to limitiations in the way we load stuff, we have to avoid reusing

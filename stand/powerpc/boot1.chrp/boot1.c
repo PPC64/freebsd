@@ -130,9 +130,9 @@ _start:                         \n\
         b       ofw_init        \n\
 ");
 
-#if BYTE_ORDER == LITTLE_ENDIAN
 ofwfp_t realofw;
 
+#if BYTE_ORDER == LITTLE_ENDIAN
 /*
  * Minimal endianness-swap trampoline for LE. 
  */
@@ -210,7 +210,7 @@ ofw_init(void *vpd, int res, ofwfp_t openfirm, char *arg, int argl)
 	realofw = openfirm;
 	ofw = call_ofw;
 #else
-	ofw = openfirm;
+	realofw = ofw = openfirm;
 #endif
 
 	chosenh = ofw_finddevice("/chosen");
@@ -627,7 +627,7 @@ load(const char *fname)
 	}
 	ofw_close(bootdev);
 	(*(void (*)(void *, int, ofwfp_t, char *, int))eh.e_entry)(NULL, 0, 
-	    ofw,NULL,0);
+	    realofw,NULL,0);
 }
 
 static int

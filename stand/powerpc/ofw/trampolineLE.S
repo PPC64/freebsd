@@ -68,3 +68,4 @@ ASENTRY_NOPROF(openfirmware_trampoline)
 	addi	%r1, %r1, 16
 	mtlr	%r0
 	blr
+ASEND(openfirmware_trampoline)

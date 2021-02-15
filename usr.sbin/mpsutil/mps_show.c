@@ -138,7 +138,7 @@ show_adapter(int ac, char **av)
 	    MPI2_SASIOUNITPAGE0_PAGEVERSION, 0, 0, &IOCStatus);
 	if (sas0 == NULL) {
 		error = errno;
-		warn("Error retrieving SAS IO Unit page %d", le16toh(IOCStatus));
+		warn("Error retrieving SAS IO Unit page %d", IOCStatus);
 		free(sas0);
 		close(fd);
 		return (error);
@@ -149,7 +149,7 @@ show_adapter(int ac, char **av)
 	    MPI2_SASIOUNITPAGE1_PAGEVERSION, 1, 0, &IOCStatus);
 	if (sas1 == NULL) {
 		error = errno;
-		warn("Error retrieving SAS IO Unit page %d", le16toh(IOCStatus));
+		warn("Error retrieving SAS IO Unit page %d", IOCStatus);
 		free(sas0);
 		close(fd);
 		return (error);
@@ -498,7 +498,7 @@ show_devices(int ac, char **av)
 	    MPI2_SASIOUNITPAGE0_PAGEVERSION, 0, 0, &IOCStatus);
 	if (sas0 == NULL) {
 		error = errno;
-		warn("Error retrieving SAS IO Unit page %d", le16toh(IOCStatus));
+		warn("Error retrieving SAS IO Unit page %d", IOCStatus);
 		return (error);
 	}
 	nphys = sas0->NumPhys;
@@ -514,7 +514,7 @@ show_devices(int ac, char **av)
 		    MPI2_SAS_DEVICE_PGAD_FORM_GET_NEXT_HANDLE | handle,
 		    &IOCStatus);
 		if (device == NULL) {
-			if (le16toh(IOCStatus) == MPI2_IOCSTATUS_CONFIG_INVALID_PAGE)
+			if (IOCStatus == MPI2_IOCSTATUS_CONFIG_INVALID_PAGE)
 				break;
 			error = errno;
 			warn("Error retrieving device page");
@@ -554,10 +554,10 @@ show_devices(int ac, char **av)
 			    MPI2_SAS_EXPAND_PGAD_PHYNUM_SHIFT) |
 			    le16toh(device->ParentDevHandle), &IOCStatus);
 			if (exp1 == NULL) {
-				if (le16toh(IOCStatus) != MPI2_IOCSTATUS_CONFIG_INVALID_PAGE) {
+				if (IOCStatus != MPI2_IOCSTATUS_CONFIG_INVALID_PAGE) {
 					error = errno;
 					warn("Error retrieving expander page 1: 0x%x",
-					    le16toh(IOCStatus));
+					    IOCStatus);
 					close(fd);
 					free(device);
 					return (error);
@@ -620,7 +620,7 @@ show_enclosures(int ac, char **av)
 		    MPI2_SAS_ENCLOS_PGAD_FORM_GET_NEXT_HANDLE | handle,
 		    &IOCStatus);
 		if (enc == NULL) {
-			if (le16toh(IOCStatus) == MPI2_IOCSTATUS_CONFIG_INVALID_PAGE)
+			if (IOCStatus == MPI2_IOCSTATUS_CONFIG_INVALID_PAGE)
 				break;
 			error = errno;
 			warn("Error retrieving enclosure page");
@@ -671,7 +671,7 @@ show_expanders(int ac, char **av)
 		    MPI2_SAS_EXPAND_PGAD_FORM_GET_NEXT_HNDL | handle,
 		    &IOCStatus);
 		if (exp0 == NULL) {
-			if (le16toh(IOCStatus) == MPI2_IOCSTATUS_CONFIG_INVALID_PAGE)
+			if (IOCStatus == MPI2_IOCSTATUS_CONFIG_INVALID_PAGE)
 				break;
 			error = errno;
 			warn("Error retrieving expander page 0");
@@ -704,7 +704,7 @@ show_expanders(int ac, char **av)
 			    (i << MPI2_SAS_EXPAND_PGAD_PHYNUM_SHIFT) |
 			    exp0->DevHandle, &IOCStatus);
 			if (exp1 == NULL) {
-				if (le16toh(IOCStatus) !=
+				if (IOCStatus !=
 				    MPI2_IOCSTATUS_CONFIG_INVALID_PAGE)
 					warn("Error retrieving expander pg 1");
 				continue;
@@ -784,7 +784,7 @@ show_cfgpage(int ac, char **av)
 	if (data == NULL) {
 		error = errno;
 		warn("Error retrieving cfg page: %s\n",
-		    mps_ioc_status(le16toh(IOCStatus)));
+		    mps_ioc_status(IOCStatus));
 		return (error);
 	}
 

@@ -353,7 +353,7 @@ mps_read_ext_config_page_header(int fd, U8 ExtPageType, U8 PageNumber, U32 PageA
 
 	if (!IOC_STATUS_SUCCESS(le16toh(reply.IOCStatus))) {
 		if (IOCStatus != NULL)
-			*IOCStatus = reply.IOCStatus;
+			*IOCStatus = le16toh(reply.IOCStatus);
 		return (EIO);
 	}
 	if ((header == NULL) || (ExtPageLength == NULL))
@@ -384,7 +384,7 @@ mps_read_config_page(int fd, U8 PageType, U8 PageNumber, U32 PageAddress,
 	bzero(&req, sizeof(req));
 	req.Function = MPI2_FUNCTION_CONFIG;
 	req.Action = MPI2_CONFIG_ACTION_PAGE_READ_CURRENT;
-	req.PageAddress = PageAddress;
+	req.PageAddress = htole32(PageAddress);
 	req.Header = header;
 	if (req.Header.PageLength == 0)
 		req.Header.PageLength = 4;
@@ -398,7 +398,8 @@ mps_read_config_page(int fd, U8 PageType, U8 PageNumber, U32 PageAddress,
 		errno = error;
 		return (NULL);
 	}
-	if (!IOC_STATUS_SUCCESS(le16toh(reply.IOCStatus))) {
+	reply.IOCStatus = le16toh(reply.IOCStatus);
+	if (!IOC_STATUS_SUCCESS(reply.IOCStatus)) {
 		if (IOCStatus != NULL)
 			*IOCStatus = reply.IOCStatus;
 		else
@@ -438,7 +439,7 @@ mps_read_extended_config_page(int fd, U8 ExtPageType, U8 PageVersion,
 	req.PageAddress = htole32(PageAddress);
 	req.Header = header;
 	if (pagelen == 0)
-		pagelen = 4;
+		pagelen = htole16(4);
 	req.ExtPageLength = pagelen;
 	req.ExtPageType = ExtPageType;
 
@@ -451,7 +452,8 @@ mps_read_extended_config_page(int fd, U8 ExtPageType, U8 PageVersion,
 		errno = error;
 		return (NULL);
 	}
-	if (!IOC_STATUS_SUCCESS(le16toh(reply.IOCStatus))) {
+	reply.IOCStatus = le16toh(reply.IOCStatus);
+	if (!IOC_STATUS_SUCCESS(reply.IOCStatus)) {
 		if (IOCStatus != NULL)
 			*IOCStatus = reply.IOCStatus;
 		else
@@ -574,6 +576,7 @@ mps_read_config_page(int fd, U8 PageType, U8 PageNumber, U32 PageAddress,
 		errno = error;
 		return (NULL);
 	}
+	req.ioc_status = le16toh(req.ioc_status);
 	if (!IOC_STATUS_SUCCESS(req.ioc_status)) {
 		if (IOCStatus != NULL)
 			*IOCStatus = req.ioc_status;
@@ -601,9 +604,10 @@ mps_read_extended_config_page(int fd, U8 ExtPageType, U8 PageVersion,
 	req.header.PageVersion = PageVersion;
 	req.header.PageNumber = PageNumber;
 	req.header.ExtPageType = ExtPageType;
-	req.page_address = PageAddress;
+	req.page_address = htole32(PageAddress);
 	if (ioctl(fd, MPSIO_READ_EXT_CFG_HEADER, &req) < 0)
 		return (NULL);
+	req.ioc_status = le16toh(req.ioc_status);
 	if (!IOC_STATUS_SUCCESS(req.ioc_status)) {
 		if (IOCStatus != NULL)
 			*IOCStatus = req.ioc_status;
@@ -623,6 +627,7 @@ mps_read_extended_config_page(int fd, U8 ExtPageType, U8 PageVersion,
 		errno = error;
 		return (NULL);
 	}
+	req.ioc_status = le16toh(req.ioc_status);
 	if (!IOC_STATUS_SUCCESS(req.ioc_status)) {
 		if (IOCStatus != NULL)
 			*IOCStatus = req.ioc_status;

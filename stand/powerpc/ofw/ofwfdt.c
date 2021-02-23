@@ -168,7 +168,6 @@ ofwfdt_fixups(void *fdtp)
 				else if (OF_hasprop(node, "ibm,phandle"))
 					OF_getprop(node, "ibm,phandle", &node,
 					    sizeof(node));
-				node = cpu_to_fdt32(node);
 				fdt_setprop(fdtp, offset, chosenprops[i], &node,
 				    sizeof(node));
 			}

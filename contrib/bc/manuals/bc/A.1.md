@@ -30,7 +30,7 @@ POSSIBILITY OF SUCH DAMAGE.
 
 # NAME
 
-bc - arbitrary-precision arithmetic language and calculator
+bc - arbitrary-precision decimal arithmetic language and calculator
 
 # SYNOPSIS
 
@@ -153,10 +153,10 @@ The following are the options that bc(1) accepts.
 
 **-q**, **--quiet**
 
-:   Do not print copyright header. bc(1) will also suppress the header in
-    non-interactive mode.
-
-    This is mostly for compatibility with the [GNU bc(1)][2].
+:   This option is for compatibility with the [GNU bc(1)][2]; it is a no-op.
+    Without this option, GNU bc(1) prints a copyright header. This bc(1) only
+    prints the copyright header if one or more of the **-v**, **-V**, or
+    **--version** options are given.
 
     This is a **non-portable extension**.
 
@@ -187,9 +187,10 @@ The following are the options that bc(1) accepts.
     evaluated in the order given. This means that if a file is given before an
     expression, the file is read in and evaluated first.
 
-    In other bc(1) implementations, this option causes the program to execute
-    the expressions and then exit. This bc(1) does not, unless the
-    **BC_EXPR_EXIT** is defined (see the **ENVIRONMENT VARIABLES** section).
+    After processing all expressions and files, bc(1) will exit, unless **-**
+    (**stdin**) was given as an argument at least once to **-f** or **--file**.
+    However, if any other **-e**, **--expression**, **-f**, or **--file**
+    arguments are given after that, bc(1) will give a fatal error and exit.
 
     This is a **non-portable extension**.
 
@@ -199,9 +200,8 @@ The following are the options that bc(1) accepts.
     through **stdin**. If expressions are also given (see above), the
     expressions are evaluated in the order given.
 
-    In other bc(1) implementations, this option causes the program to execute
-    the files and then exit. This bc(1) does not, unless the
-    **BC_EXPR_EXIT** is defined (see the **ENVIRONMENT VARIABLES** section).
+    After processing all expressions and files, bc(1) will exit, unless **-**
+    (**stdin**) was given as an argument at least once to **-f** or **--file**.
 
     This is a **non-portable extension**.
 
@@ -419,9 +419,9 @@ if they were valid digits, regardless of the value of **ibase**. This means that
 **35**.
 
 In addition, bc(1) accepts numbers in scientific notation. These have the form
-**\<number\>e\<integer\>**. The power (the portion after the **e**) must be an
-integer. An example is **1.89237e9**, which is equal to **1892370000**. Negative
-exponents are also allowed, so **4.2890e-3** is equal to **0.0042890**.
+**\<number\>e\<integer\>**. The exponent (the portion after the **e**) must be
+an integer. An example is **1.89237e9**, which is equal to **1892370000**.
+Negative exponents are also allowed, so **4.2890e-3** is equal to **0.0042890**.
 
 Using scientific notation is an error or warning if the **-s** or **-w**,
 respectively, command-line options (or equivalents) are given.
@@ -584,7 +584,7 @@ The operators will be described in more detail below.
 
 :   The **power** operator (not the **exclusive or** operator, as it would be in
     C) takes two expressions and raises the first to the power of the value of
-    the second.
+    the second. The *scale* of the result is equal to **scale**.
 
     The second expression must be an integer (no *scale*), and if it is
     negative, the first value must be non-zero.
@@ -932,6 +932,8 @@ The extended library is a **non-portable extension**.
 
 :   Calculates **x** to the power of **y**, even if **y** is not an integer, and
     returns the result to the current **scale**.
+
+    It is an error if **y** is negative and **x** is **0**.
 
     This is a transcendental function (see the *Transcendental Functions*
     subsection below).
@@ -1524,12 +1526,6 @@ bc(1) recognizes the following environment variables:
     lines to that length, including the backslash (**\\**). The default line
     length is **70**.
 
-**BC_EXPR_EXIT**
-
-:   If this variable exists (no matter the contents), bc(1) will exit
-    immediately after executing expressions and files given by the **-e** and/or
-    **-f** command-line options (and any equivalents).
-
 # EXIT STATUS
 
 bc(1) returns the following exit statuses:
@@ -1687,7 +1683,7 @@ None are known. Report bugs at https://git.yzena.com/gavin/bc.
 
 # AUTHORS
 
-Gavin D. Howard <yzena.tech@gmail.com> and contributors.
+Gavin D. Howard <gavin@yzena.com> and contributors.
 
 [1]: https://pubs.opengroup.org/onlinepubs/9699919799/utilities/bc.html
 [2]: https://www.gnu.org/software/bc/

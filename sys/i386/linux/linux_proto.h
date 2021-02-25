@@ -1079,7 +1079,12 @@ struct linux_get_robust_list_args {
 	char len_l_[PADL_(l_size_t *)]; l_size_t * len; char len_r_[PADR_(l_size_t *)];
 };
 struct linux_splice_args {
-	register_t dummy;
+	char fd_in_l_[PADL_(int)]; int fd_in; char fd_in_r_[PADR_(int)];
+	char off_in_l_[PADL_(l_loff_t *)]; l_loff_t * off_in; char off_in_r_[PADR_(l_loff_t *)];
+	char fd_out_l_[PADL_(int)]; int fd_out; char fd_out_r_[PADR_(int)];
+	char off_out_l_[PADL_(l_loff_t *)]; l_loff_t * off_out; char off_out_r_[PADR_(l_loff_t *)];
+	char len_l_[PADL_(l_size_t)]; l_size_t len; char len_r_[PADR_(l_size_t)];
+	char flags_l_[PADL_(l_uint)]; l_uint flags; char flags_r_[PADR_(l_uint)];
 };
 struct linux_sync_file_range_args {
 	char fd_l_[PADL_(l_int)]; l_int fd; char fd_r_[PADR_(l_int)];
@@ -1206,10 +1211,16 @@ struct linux_prlimit64_args {
 	char old_l_[PADL_(struct rlimit *)]; struct rlimit * old; char old_r_[PADR_(struct rlimit *)];
 };
 struct linux_name_to_handle_at_args {
-	register_t dummy;
+	char dirfd_l_[PADL_(l_int)]; l_int dirfd; char dirfd_r_[PADR_(l_int)];
+	char name_l_[PADL_(const char *)]; const char * name; char name_r_[PADR_(const char *)];
+	char handle_l_[PADL_(struct l_file_handle *)]; struct l_file_handle * handle; char handle_r_[PADR_(struct l_file_handle *)];
+	char mnt_id_l_[PADL_(l_int *)]; l_int * mnt_id; char mnt_id_r_[PADR_(l_int *)];
+	char flags_l_[PADL_(l_int)]; l_int flags; char flags_r_[PADR_(l_int)];
 };
 struct linux_open_by_handle_at_args {
-	register_t dummy;
+	char mountdirfd_l_[PADL_(l_int)]; l_int mountdirfd; char mountdirfd_r_[PADR_(l_int)];
+	char handle_l_[PADL_(struct l_file_handle *)]; struct l_file_handle * handle; char handle_r_[PADR_(struct l_file_handle *)];
+	char flags_l_[PADL_(l_int)]; l_int flags; char flags_r_[PADR_(l_int)];
 };
 struct linux_clock_adjtime_args {
 	register_t dummy;

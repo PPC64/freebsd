@@ -312,7 +312,7 @@ local function loadModule(mod, silent)
 	for k, v in pairs(mod) do
 		if v.load ~= nil and v.load:lower() == "yes" then
 			local module_name = v.name or k
-			if blacklist[module_name] ~= nil then
+			if not v.force and blacklist[module_name] ~= nil then
 				if not silent then
 					print(MSG_MODBLACKLIST:format(module_name))
 				end
@@ -389,7 +389,14 @@ end
 
 local function checkNextboot()
 	local nextboot_file = loader.getenv("nextboot_conf")
+	local nextboot_enable = loader.getenv("nextboot_enable")
+
 	if nextboot_file == nil then
+		return
+	end
+
+	-- is nextboot_enable set in nvstore?
+	if nextboot_enable == "NO" then
 		return
 	end
 
@@ -398,7 +405,8 @@ local function checkNextboot()
 		return
 	end
 
-	if text:match("^nextboot_enable=\"NO\"") ~= nil then
+	if nextboot_enable == nil and
+	    text:match("^nextboot_enable=\"NO\"") ~= nil then
 		-- We're done; nextboot is not enabled
 		return
 	end
@@ -421,6 +429,7 @@ local function checkNextboot()
 		io.write(nfile, "nextboot_enable=\"NO\" ")
 		io.close(nfile)
 	end
+	loader.setenv("nextboot_enable", "NO")
 end
 
 -- Module exports
@@ -671,6 +680,45 @@ function config.loadelf()
 	status = loadModule(modules, not config.verbose)
 	hook.runAll("modules.loaded")
 	return status
+end
+
+function config.enableModule(modname)
+	if modules[modname] == nil then
+		modules[modname] = {}
+	elseif modules[modname].load == "YES" then
+		modules[modname].force = true
+		return true
+	end
+
+	modules[modname].load = "YES"
+	modules[modname].force = true
+	return true
+end
+
+function config.disableModule(modname)
+	if modules[modname] == nil then
+		return false
+	elseif modules[modname].load ~= "YES" then
+		return true
+	end
+
+	modules[modname].load = "NO"
+	modules[modname].force = nil
+	return true
+end
+
+function config.isModuleEnabled(modname)
+	local mod = modules[modname]
+	if not mod or mod.load ~= "YES" then
+		return false
+	end
+
+	if mod.force then
+		return true
+	end
+
+	local blacklist = getBlacklist()
+	return not blacklist[modname]
 end
 
 hook.registerType("config.loaded")

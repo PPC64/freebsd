@@ -24,7 +24,7 @@
 .\"
 .\" $FreeBSD$
 .\"
-.Dd Jun 25, 2020
+.Dd December 8, 2020
 .Dt BHYVE 8
 .Os
 .Sh NAME
@@ -104,7 +104,8 @@ Enable a low-level console device supported by
 .Fx
 kernels compiled with
 .Cd "device bvmconsole" .
-This option will be deprecated in a future version.
+This option is deprecated and will be removed in
+.Fx 13.0 .
 .It Fl c Op Ar setting ...
 Number of guest virtual CPUs
 and/or the CPU topology.
@@ -145,7 +146,8 @@ kernels compiled with
 .Cd "device bvmdebug" ,
 allow a remote kernel kgdb to be relayed to the guest kernel gdb stub
 via a local IPv4 address and this port.
-This option will be deprecated in a future version.
+This option is deprecated and will be removed in
+.Fx 13.0 .
 .It Fl G Ar port
 Start a debug server that uses the GDB protocol to export guest state to a
 debugger.
@@ -169,9 +171,11 @@ Allow devices behind the LPC PCI-ISA bridge to be configured.
 The only supported devices are the TTY-class devices
 .Ar com1
 and
-.Ar com2
-and the boot ROM device
-.Ar bootrom .
+.Ar com2 ,
+the boot ROM device
+.Ar bootrom ,
+and the debug/test device
+.Ar pc-testdev .
 .Pp
 .Ar help
 print a list of supported LPC devices.
@@ -258,6 +262,8 @@ Virtio network interface.
 Virtio block storage interface.
 .It Li virtio-scsi
 Virtio SCSI interface.
+.It Li virtio-9p
+Virtio 9p (VirtFS) interface.
 .It Li virtio-rnd
 Virtio RNG interface.
 .It Li virtio-console
@@ -275,7 +281,8 @@ Intel e82545 network interface.
 .It Li uart
 PCI 16550 serial device.
 .It Li lpc
-LPC PCI-ISA bridge with COM1 and COM2 16550 serial ports and a boot ROM.
+LPC PCI-ISA bridge with COM1 and COM2 16550 serial ports, a boot ROM, and,
+optionally, the debug/test device.
 The LPC bridge emulation can only be configured on bus 0.
 .It Li fbuf
 Raw framebuffer device attached to VNC server.
@@ -372,6 +379,19 @@ are:
 .It Li iid= Ns Ar IID
 Initiator ID to use when sending requests to specified CTL port.
 The default value is 0.
+.El
+.Pp
+9P devices:
+.Bl -tag -width 10n
+.It Pa sharename=/path/to/share[,9p-device-options]
+.El
+.Pp
+The
+.Ar 9p-device-options
+are:
+.Bl -tag -width 10n
+.It Li ro
+Expose the share in read-only mode.
 .El
 .Pp
 TTY devices:
@@ -538,6 +558,18 @@ Max number of concurrent I/O requests.
 Sector size (defaults to blockif sector size).
 .It Li ser
 Serial number with maximum 20 characters.
+.El
+.Pp
+AHCI devices:
+.Bl -tag -width 10n
+.It Li nmrr
+Nominal Media Rotation Rate, known as RPM. value 1 will indicate device as Solid State Disk. default value is 0, not report.
+.It Li ser
+Serial Number with maximum 20 characters.
+.It Li rev
+Revision Number with maximum 8 characters.
+.It Li model
+Model Number with maximum 40 characters.
 .El
 .Pp
 HD Audio devices:

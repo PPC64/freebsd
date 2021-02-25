@@ -107,6 +107,23 @@ other locations, use the `PREFIX` environment variable when running
 `configure.sh` or pass the `--prefix=<prefix>` option to `configure.sh`. See the
 [build manual][5], or run `./configure.sh --help`, for more details.
 
+### Library
+
+This `bc` does provide a way to build a math library with C bindings. This is
+done by the `-a` or `--library` options to `configure.sh`:
+
+```
+./configure.sh -a
+```
+
+When building the library, the executables are not built. For more information,
+see the [build manual][5].
+
+The library API can be found in [`manuals/bcl.3.md`][26] or `man bcl` once the
+library is installed.
+
+The library is built as `bin/libbcl.a`.
+
 ### Package and Distro Maintainers
 
 #### Recommended Compiler
@@ -262,8 +279,8 @@ Other projects based on this bc are:
   toybox `bc` should be reported there.
 
 * [FreeBSD `bc`][23]. While the `bc` in FreeBSD is kept up-to-date, it is better
-  to report bugs there, and the maintainers of the package will contact me if
-  necessary.
+  to [report bugs there][24], as well as [submit patches][25], and the
+  maintainers of the package will contact me if necessary.
 
 ## Language
 
@@ -332,4 +349,7 @@ Folders:
 [20]: https://git.yzena.com/gavin/bc
 [21]: https://gavinhoward.com/2020/04/i-am-moving-away-from-github/
 [22]: https://www.deepl.com/translator
-[23]: https://github.com/freebsd/freebsd/tree/master/contrib/bc
+[23]: https://svnweb.freebsd.org/base/head/contrib/bc/
+[24]: https://bugs.freebsd.org/
+[25]: https://reviews.freebsd.org/
+[26]: ./manuals/bcl.3.md

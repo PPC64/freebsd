@@ -65,6 +65,14 @@ local function parseBootArgs(argv, with_kernel)
 	end
 end
 
+local function setModule(module, loading)
+	if loading and config.enableModule(module) then
+		print(module .. " will be loaded")
+	elseif not loading and config.disableModule(module) then
+		print(module .. " will not be loaded")
+	end
+end
+
 -- Declares a global function cli_execute that attempts to dispatch the
 -- arguments passed as a lua function. This gives lua a chance to intercept
 -- builtin CLI commands like "boot"
@@ -130,8 +138,39 @@ cli['read-conf'] = function(...)
 	config.readConf(assert(core.popFrontTable(argv)))
 end
 
-cli['reload-conf'] = function(...)
+cli['reload-conf'] = function()
 	config.reload()
+end
+
+cli["enable-module"] = function(...)
+	local _, argv = cli.arguments(...)
+	if #argv == 0 then
+		print("usage error: enable-module module")
+		return
+	end
+
+	setModule(argv[1], true)
+end
+
+cli["disable-module"] = function(...)
+	local _, argv = cli.arguments(...)
+	if #argv == 0 then
+		print("usage error: disable-module module")
+		return
+	end
+
+	setModule(argv[1], false)
+end
+
+cli["toggle-module"] = function(...)
+	local _, argv = cli.arguments(...)
+	if #argv == 0 then
+		print("usage error: toggle-module module")
+		return
+	end
+
+	local module = argv[1]
+	setModule(module, not config.isModuleEnabled(module))
 end
 
 -- Used for splitting cli varargs into cmd_name and the rest of argv

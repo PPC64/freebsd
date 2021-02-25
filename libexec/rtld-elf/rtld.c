@@ -470,19 +470,6 @@ _rtld(Elf_Addr *sp, func_ptr_type *exit_proc, Obj_Entry **objp)
 	    }
 	    direct_exec = true;
 
-	    /*
-	     * Set osrel for us, it is later reset to the binary'
-	     * value before first instruction of code from the binary
-	     * is executed.
-	     */
-	    mib[0] = CTL_KERN;
-	    mib[1] = KERN_PROC;
-	    mib[2] = KERN_PROC_OSREL;
-	    mib[3] = getpid();
-	    osrel = __FreeBSD_version;
-	    sz = sizeof(old_osrel);
-	    (void)sysctl(mib, 4, &old_osrel, &sz, &osrel, sizeof(osrel));
-
 	    dbg("opening main program in direct exec mode");
 	    if (argc >= 2) {
 		rtld_argc = parse_args(argv, argc, &search_in_path, &fd, &argv0);
@@ -1102,7 +1089,10 @@ digest_dynamic1(Obj_Entry *obj, int early, const Elf_Dyn **dyn_rpath,
     *dyn_runpath = NULL;
 
     obj->bind_now = false;
-    for (dynp = obj->dynamic;  dynp->d_tag != DT_NULL;  dynp++) {
+    dynp = obj->dynamic;
+    if (dynp == NULL)
+	return;
+    for (;  dynp->d_tag != DT_NULL;  dynp++) {
 	switch (dynp->d_tag) {
 
 	case DT_REL:
@@ -2282,8 +2272,10 @@ init_rtld(caddr_t mapbase, Elf_Auxinfo **aux_info)
     parse_rtld_phdr(&obj_rtld);
     obj_enforce_relro(&obj_rtld);
 
+    r_debug.r_version = R_DEBUG_VERSION;
     r_debug.r_brk = r_debug_state;
     r_debug.r_state = RT_CONSISTENT;
+    r_debug.r_ldbase = obj_rtld.relocbase;
 }
 
 /*
@@ -2854,7 +2846,7 @@ objlist_call_init(Objlist *list, RtldLockState *lockstate)
 	        (void *)elm->obj->init);
 	    LD_UTRACE(UTRACE_INIT_CALL, elm->obj, (void *)elm->obj->init,
 	        0, 0, elm->obj->path);
-	    call_initfini_pointer(elm->obj, elm->obj->init);
+	    call_init_pointer(elm->obj, elm->obj->init);
 	}
 	init_addr = (Elf_Addr *)elm->obj->init_array;
 	if (init_addr != NULL) {
@@ -3023,11 +3015,8 @@ relocate_object(Obj_Entry *obj, bool bind_now, Obj_Entry *rtldobj,
 		dbg("relocating \"%s\"", obj->path);
 
 	if (obj->symtab == NULL || obj->strtab == NULL ||
-	    !(obj->valid_hash_sysv || obj->valid_hash_gnu)) {
-		_rtld_error("%s: Shared object has no run-time symbol table",
-			    obj->path);
-		return (-1);
-	}
+	    !(obj->valid_hash_sysv || obj->valid_hash_gnu))
+		dbg("object %s has no run-time symbol table", obj->path);
 
 	/* There are relocations to the write-protected text segment. */
 	if (obj->textrel && reloc_textrel_prot(obj, true) != 0)

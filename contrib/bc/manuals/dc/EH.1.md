@@ -30,7 +30,7 @@ POSSIBILITY OF SUCH DAMAGE.
 
 # Name
 
-dc - arbitrary-precision reverse-Polish notation calculator
+dc - arbitrary-precision decimal reverse-Polish notation calculator
 
 # SYNOPSIS
 
@@ -101,9 +101,8 @@ The following are the options that dc(1) accepts.
     evaluated in the order given. This means that if a file is given before an
     expression, the file is read in and evaluated first.
 
-    In other dc(1) implementations, this option causes the program to execute
-    the expressions and then exit. This dc(1) does not, unless the
-    **DC_EXPR_EXIT** is defined (see the **ENVIRONMENT VARIABLES** section).
+    After processing all expressions and files, dc(1) will exit, unless **-**
+    (**stdin**) was given as an argument at least once to **-f** or **--file**.
 
     This is a **non-portable extension**.
 
@@ -113,9 +112,10 @@ The following are the options that dc(1) accepts.
     through **stdin**. If expressions are also given (see above), the
     expressions are evaluated in the order given.
 
-    In other dc(1) implementations, this option causes the program to execute
-    the files and then exit. This dc(1) does not, unless the
-    **DC_EXPR_EXIT** is defined (see the **ENVIRONMENT VARIABLES** section).
+    After processing all expressions and files, dc(1) will exit, unless **-**
+    (**stdin**) was given as an argument at least once to **-f** or **--file**.
+    However, if any other **-e**, **--expression**, **-f**, or **--file**
+    arguments are given after that, bc(1) will give a fatal error and exit.
 
     This is a **non-portable extension**.
 
@@ -289,7 +289,8 @@ These are the commands used for arithmetic.
 **\^**
 
 :   The top two values are popped off the stack, the second is raised to the
-    power of the first, and the result is pushed onto the stack.
+    power of the first, and the result is pushed onto the stack. The *scale* of
+    the result is equal to **scale**.
 
     The first value popped off of the stack must be an integer, and if that
     value is negative, the second value popped off of the stack must be
@@ -1012,6 +1013,6 @@ None are known. Report bugs at https://git.yzena.com/gavin/bc.
 
 # AUTHOR
 
-Gavin D. Howard <yzena.tech@gmail.com> and contributors.
+Gavin D. Howard <gavin@yzena.com> and contributors.
 
 [1]: https://pubs.opengroup.org/onlinepubs/9699919799/utilities/bc.html

@@ -17,6 +17,7 @@ INTERNALLIB=
 .endif
 
 .include <src.opts.mk>
+.include <bsd.linker.mk>
 
 WARNS?=		1
 
@@ -34,6 +35,9 @@ SASRC=		${BOOTSRC}/libsa
 SYSDIR=		${SRCTOP}/sys
 UBOOTSRC=	${BOOTSRC}/uboot
 ZFSSRC=		${SASRC}/zfs
+OZFS=		${SRCTOP}/sys/contrib/openzfs
+ZFSOSSRC=	${OZFS}/module/os/freebsd/
+ZFSOSINC=	${OZFS}/include/os/freebsd
 LIBCSRC=	${SRCTOP}/lib/libc
 
 BOOTOBJ=	${OBJTOP}/stand
@@ -54,6 +58,11 @@ LIBSA32=	${BOOTOBJ}/libsa32/libsa32.a
 
 # Standard options:
 CFLAGS+=	-nostdinc
+# Allow CFLAGS_EARLY.file/target so that code that needs specific stack
+# of include paths can set them up before our include paths. Normally
+# the only thing that should be there are -I directives, and as few of
+# those as possible.
+CFLAGS+=	${CFLAGS_EARLY} ${CFLAGS_EARLY.${.IMPSRC:T}} ${CFLAGS_EARLY.${.TARGET:T}}
 .if ${MACHINE_ARCH} == "amd64" && ${DO32:U0} == 1
 CFLAGS+=	-I${BOOTOBJ}/libsa32
 .else
@@ -96,10 +105,10 @@ CFLAGS+= -DLOADER_DISK_SUPPORT
 
 # Machine specific flags for all builds here
 
-# All PowerPC builds are 32 bit. We have no 64-bit loaders on powerpc
-# or powerpc64.
-.if ${MACHINE_ARCH} == "powerpc64"
-CFLAGS+=	-m32 -mcpu=powerpc
+# Ensure PowerPC64 and PowerPC64LE boot loaders are compiled as 32 bit
+# and in big endian.
+.if ${MACHINE_ARCH:Mpowerpc64*} != ""
+CFLAGS+=	-m32 -mcpu=powerpc -mbig-endian
 .endif
 
 # For amd64, there's a bit of mixed bag. Some of the tree (i386, lib*32) is
@@ -151,7 +160,7 @@ CFLAGS+=	-fPIC
 
 # Some RISC-V linkers have support for relaxations, while some (lld) do not
 # yet. If this is the case we inhibit the compiler from emitting relaxations.
-.if ${MACHINE_CPUARCH} == "riscv" && ${LINKER_FEATURES:Mriscv-relaxations} == ""
+.if ${LINKER_FEATURES:Mriscv-relaxations} == ""
 CFLAGS+=	-mno-relax
 .endif
 
@@ -164,12 +173,6 @@ DD=dd ${DD_NOSTATUS}
 
 .if ${MACHINE_CPUARCH} == "mips"
 CFLAGS+=	-G0 -fno-pic -mno-abicalls
-.endif
-
-.if ${MK_LOADER_FORCE_LE} != "no"
-.if ${MACHINE_ARCH} == "powerpc64"
-CFLAGS+=	-mlittle-endian
-.endif
 .endif
 
 #
@@ -236,6 +239,6 @@ ${_ILINKS}: .NOMETA
 	esac ; \
 	path=`(cd $$path && /bin/pwd)` ; \
 	${ECHO} ${.TARGET} "->" $$path ; \
-	ln -fhs $$path ${.TARGET}
+	ln -fns $$path ${.TARGET}
 .endif # !NO_OBJ
 .endif # __BOOT_DEFS_MK__

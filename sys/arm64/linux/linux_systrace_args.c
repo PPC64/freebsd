@@ -599,7 +599,14 @@ systrace_args(int sysnum, void *params, uint64_t *uarg, int *n_args)
 	}
 	/* linux_splice */
 	case 76: {
-		*n_args = 0;
+		struct linux_splice_args *p = params;
+		iarg[0] = p->fd_in; /* int */
+		uarg[1] = (intptr_t) p->off_in; /* l_loff_t * */
+		iarg[2] = p->fd_out; /* int */
+		uarg[3] = (intptr_t) p->off_out; /* l_loff_t * */
+		iarg[4] = p->len; /* l_size_t */
+		iarg[5] = p->flags; /* l_uint */
+		*n_args = 6;
 		break;
 	}
 	/* linux_tee */
@@ -1953,12 +1960,22 @@ systrace_args(int sysnum, void *params, uint64_t *uarg, int *n_args)
 	}
 	/* linux_name_to_handle_at */
 	case 264: {
-		*n_args = 0;
+		struct linux_name_to_handle_at_args *p = params;
+		iarg[0] = p->dirfd; /* l_int */
+		uarg[1] = (intptr_t) p->name; /* const char * */
+		uarg[2] = (intptr_t) p->handle; /* struct l_file_handle * */
+		uarg[3] = (intptr_t) p->mnt_id; /* l_int * */
+		iarg[4] = p->flags; /* l_int */
+		*n_args = 5;
 		break;
 	}
 	/* linux_open_by_handle_at */
 	case 265: {
-		*n_args = 0;
+		struct linux_open_by_handle_at_args *p = params;
+		iarg[0] = p->mountdirfd; /* l_int */
+		uarg[1] = (intptr_t) p->handle; /* struct l_file_handle * */
+		iarg[2] = p->flags; /* l_int */
+		*n_args = 3;
 		break;
 	}
 	/* linux_clock_adjtime */
@@ -3207,6 +3224,28 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		break;
 	/* linux_splice */
 	case 76:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "userland l_loff_t *";
+			break;
+		case 2:
+			p = "int";
+			break;
+		case 3:
+			p = "userland l_loff_t *";
+			break;
+		case 4:
+			p = "l_size_t";
+			break;
+		case 5:
+			p = "l_uint";
+			break;
+		default:
+			break;
+		};
 		break;
 	/* linux_tee */
 	case 77:
@@ -5379,9 +5418,41 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		break;
 	/* linux_name_to_handle_at */
 	case 264:
+		switch(ndx) {
+		case 0:
+			p = "l_int";
+			break;
+		case 1:
+			p = "userland const char *";
+			break;
+		case 2:
+			p = "userland struct l_file_handle *";
+			break;
+		case 3:
+			p = "userland l_int *";
+			break;
+		case 4:
+			p = "l_int";
+			break;
+		default:
+			break;
+		};
 		break;
 	/* linux_open_by_handle_at */
 	case 265:
+		switch(ndx) {
+		case 0:
+			p = "l_int";
+			break;
+		case 1:
+			p = "userland struct l_file_handle *";
+			break;
+		case 2:
+			p = "l_int";
+			break;
+		default:
+			break;
+		};
 		break;
 	/* linux_clock_adjtime */
 	case 266:
@@ -6139,6 +6210,9 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 	case 75:
 	/* linux_splice */
 	case 76:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
 	/* linux_tee */
 	case 77:
 	/* linux_readlinkat */
@@ -6891,8 +6965,14 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 	case 263:
 	/* linux_name_to_handle_at */
 	case 264:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
 	/* linux_open_by_handle_at */
 	case 265:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
 	/* linux_clock_adjtime */
 	case 266:
 	/* linux_syncfs */

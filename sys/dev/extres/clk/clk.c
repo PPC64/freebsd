@@ -544,7 +544,7 @@ clknode_create(struct clkdom * clkdom, clknode_class_t clknode_class,
 	CLK_TOPO_SLOCK();
 	clknode = clknode_find_by_name(def->name);
 	CLK_TOPO_UNLOCK();
-		if (clknode !=  NULL) {
+	if (clknode !=  NULL) {
 		if (!(clknode->flags & CLK_NODE_LINKED) &&
 		    def->flags & CLK_NODE_LINKED) {
 			/*
@@ -1407,7 +1407,7 @@ clk_set_assigned(device_t dev, phandle_t node)
 	if (ofw_bus_parse_xref_list_get_length(node,
 	    "assigned-clock-parents", "#clock-cells", &nparents) != 0)
 		nparents = -1;
-	for (i = nclocks - 1; i >= 0; i--) {
+	for (i = 0; i < nclocks; i++) {
 		/* First get the clock we are supposed to modify */
 		rv = clk_get_by_ofw_index_prop(dev, 0, "assigned-clocks",
 		    i, &clk);

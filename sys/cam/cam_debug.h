@@ -83,6 +83,27 @@ extern u_int32_t cam_dflags;
 /* Printf delay value (to prevent scrolling) */
 extern u_int32_t cam_debug_delay;
 
+#if 1 /* LLDBG */
+
+#define	IF_CAM_DEBUG(path)				\
+	if ((cam_dpath != NULL)				\
+	 && (xpt_path_comp(cam_dpath, path) >= 0)	\
+	 && (xpt_path_comp(cam_dpath, path) < 2))
+
+#include <sys/kdb.h>
+
+#define LDB(msg)	kdb_enter(msg, msg)
+
+#define	FORCE_CAM_DEBUG(path, flag, printfargs)		\
+	do {						\
+		xpt_print_path(path);			\
+		printf printfargs;			\
+		if (cam_debug_delay != 0)		\
+			DELAY(cam_debug_delay);		\
+	} while (0)
+
+#endif
+
 /* Debugging macros. */
 #define	CAM_DEBUGGED(path, flag)			\
 	(((flag) & (CAM_DEBUG_COMPILE) & cam_dflags)	\

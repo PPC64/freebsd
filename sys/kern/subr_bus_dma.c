@@ -407,6 +407,19 @@ bus_dmamap_load(bus_dma_tag_t dmat, bus_dmamap_t map, void *buf,
 	struct memdesc mem;
 	int error;
 	int nsegs;
+	int trace;
+
+#define TPRINTF(fmt, ...)				\
+	do {						\
+		if (trace)				\
+			printf(fmt, ## __VA_ARGS__);	\
+	} while (0)
+
+	if (buflen == 0x40000)
+		trace = 1;
+	else
+		trace = 0;
+
 
 	if ((flags & BUS_DMA_NOWAIT) == 0) {
 		mem = memdesc_vaddr(buf, buflen);
@@ -421,10 +434,14 @@ bus_dmamap_load(bus_dma_tag_t dmat, bus_dmamap_t map, void *buf,
 	CTR5(KTR_BUSDMA, "%s: tag %p tag flags 0x%x error %d nsegs %d",
 	    __func__, dmat, flags, error, nsegs);
 
+	TPRINTF("%s: tag %p tag flags 0x%x error %d nsegs %d\n",
+	    __func__, dmat, flags, error, nsegs);
+
 	if (error == EINPROGRESS)
 		return (error);
 
 	segs = _bus_dmamap_complete(dmat, map, NULL, nsegs, error);
+	TPRINTF("error2=%d\n", error);
 	if (error)
 		(*callback)(callback_arg, segs, 0, error);
 	else

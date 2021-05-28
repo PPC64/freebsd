@@ -226,6 +226,19 @@ static int match_enable = 0;
 static int
 match_path(struct cam_path *path,
     u_int32_t unit, u_int32_t bus, u_int target, u_int64_t lun)
+
+#define LLDBG	1
+#if LLDBG
+
+#define DEFUN(fn)	fn; fn
+
+int match_enable = 1;
+#define MATCH_PATH(path)	(match_path(path, 2, 0, 2, 0) && match_enable)
+
+#include <cam/cam_xpt_internal.h>
+
+DEFUN(int match_path(struct cam_path *path,
+    u_int32_t unit, u_int32_t bus, u_int target, u_int64_t lun))
 {
 	u_int32_t cunit;
 	u_int32_t cbus;
@@ -312,6 +325,43 @@ log_filter(union ccb *ccb)
 }
 
 /* DEBUG STUFF } */
+
+DEFUN(u_int8_t ll_get_scsi_command(union ccb *ccb))
+{
+	if (ccb->ccb_h.flags & CAM_CDB_POINTER)
+		return (ccb->csio.cdb_io.cdb_ptr[0]);
+	else
+		return (ccb->csio.cdb_io.cdb_bytes[0]);
+}
+
+
+DEFUN(void ll_dump_fib(struct aac_fib *fib))
+{
+	struct aac_fib_header *h;
+
+	h = &fib->Header;
+	printf("FIB: Header: XferState=0x%x Command=0x%x StructType=0x%x\n",
+		h->XferState, h->Command, h->StructType);
+	printf("FIB: Header: Size=0x%x SenderSize=0x%x SenderFibAddress=0x%x\n",
+		h->Size, h->SenderSize, h->SenderFibAddress);
+	printf("FIB: Header: u=0x%x Handle=0x%x Prev=0x%x Next=0x%x\n",
+		h->u.ReceiverFibAddress, h->Handle, h->Previous, h->Next);
+	printf("FIB: data=%p\n", fib->data);
+}
+
+static void
+ll_dump_srb(struct aac_srb *srb)
+{
+	printf("SRB: function=0x%x bus=0x%x target=0x%x lun=0x%x\n",
+		srb->function, srb->bus, srb->target, srb->lun);
+	printf("SRB: timeout=0x%x flags=0x%x data_len=0x%x retry_limit=0x%x\n",
+		srb->timeout, srb->flags, srb->data_len, srb->retry_limit);
+	printf("SRB: cdb_len=%d\n", srb->cdb_len);
+	hexdump(srb->cdb, srb->cdb_len, "cdb: ", 0);
+	/* struct aac_sg_table	sg_map; */
+}
+
+#endif
 
 static void
 aac_set_scsi_error(struct aac_softc *sc, union ccb *ccb, u_int8_t status, 
@@ -1022,8 +1072,8 @@ aac_passthrough_command(struct cam_sim *sim, union ccb *ccb)
 	struct	aac_softc *sc;
 	struct	aac_command *cm;
 	struct	aac_fib *fib;
-	struct	aac_srb *srb;
 	struct	timeval tv;
+	struct	aac_srb *srb, osrb;
 
 	camsc = (struct aac_cam *)cam_sim_softc(sim);
 	sc = camsc->inf->aac_sc;
@@ -1115,6 +1165,7 @@ aac_passthrough_command(struct cam_sim *sim, union ccb *ccb)
 	/* srb->timeout = ccb->ccb_h.timeout;	XXX */
 	srb->timeout = 30;
 	srb->retry_limit = 0;
+	memcpy(&osrb, srb, sizeof(osrb));
 	aac_srb_tole(srb);
 
 	cm->cm_complete = aac_cam_complete;
@@ -1151,6 +1202,23 @@ aac_passthrough_command(struct cam_sim *sim, union ccb *ccb)
 		}
 #endif
 	}
+#if 1
+	if (ccb->ccb_h.func_code == XPT_SCSI_IO) {
+		uint8_t command;
+
+		command = ll_get_scsi_command(ccb);
+
+		if (command == WRITE_10 && MATCH_PATH(ccb->ccb_h.path)) {
+			xpt_print(ccb->ccb_h.path,
+				"func=0x%02x comm=0x%02x srb->data_len=0x%04x\n",
+				ccb->ccb_h.func_code, command, osrb.data_len);
+			//ll_dump_fib(fib);
+			ll_dump_srb(&osrb);
+			printf("aac_max_fib_size=0x%x\n", cm->cm_sc->aac_max_fib_size);
+			LDB("WRITE_10_REQ");
+		}
+	}
+#endif
 
 	aac_enqueue_ready(cm);
 	aacraid_startio(cm->cm_sc);
@@ -1409,11 +1477,13 @@ aac_cam_complete(struct aac_command *cm)
 			scommand = command;
 
 			if (command == INQUIRY) {
+#if 1	/* INQUIRY_FIX */
 				/* Ignore Data Overrun errors on INQUIRY */
 				if ((ccb->ccb_h.status & CAM_STATUS_MASK) ==
 				    CAM_DATA_RUN_ERR)
 					ccb->ccb_h.status = (ccb->ccb_h.status &
 					    ~CAM_STATUS_MASK) | CAM_REQ_CMP;
+#endif
 
 				if (ccb->ccb_h.status == CAM_REQ_CMP) {
 				  device = ccb->csio.data_ptr[0] & 0x1f;
@@ -1488,6 +1558,27 @@ aac_cam_complete(struct aac_command *cm)
 
 	save_command(cm);
 	aac_unmap_command(cm);
+#if LLDBG
+	if (ccb->ccb_h.status != (CAM_REQ_CMP | CAM_AUTOSNS_VALID) &&
+	    MATCH_PATH(ccb->ccb_h.path)) {
+		uint8_t command;
+
+		command = ll_get_scsi_command(ccb);
+
+		xpt_print(ccb->ccb_h.path,
+			"func=0x%02x comm=0x%02x status=0x%02x scsists=0x%02x\n",
+			ccb->ccb_h.func_code, command, ccb->ccb_h.status,
+			ccb->csio.scsi_status);
+		xpt_print(ccb->ccb_h.path,
+			"SRBR: sts: fib=0x%x srb=0x%x scsi=0x%x dlen=%d slen=%d\n",
+			srbr->fib_status, srbr->srb_status, srbr->scsi_status,
+			srbr->data_len, srbr->sense_len);
+		if (ccb->ccb_h.status & CAM_AUTOSNS_VALID)
+			scsi_sense_print(&ccb->csio);
+		LDB("B19");
+	}
+#endif
+
 	aacraid_release_command(cm);
 	xpt_done(ccb);
 }

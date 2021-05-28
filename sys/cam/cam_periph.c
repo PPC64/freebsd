@@ -1989,6 +1989,7 @@ cam_periph_error(union ccb *ccb, cam_flags camflags,
 		} else if (action_string != NULL)
 			xpt_print(ccb->ccb_h.path, "%s\n", action_string);
 		else {
+			LDB(__func__);
 			xpt_print(ccb->ccb_h.path,
 			    "Retrying command, %d more tries remain\n",
 			    ccb->ccb_h.retry_count);

@@ -1440,13 +1440,7 @@ aacraid_map_command_sg(void *arg, bus_dma_segment_t *segs, int nseg, int error)
 	struct aac_softc *sc;
 	struct aac_command *cm;
 	struct aac_fib *fib;
-	int i, trace;
-
-#define TPRINTF(fmt, ...)				\
-	do {						\
-		if (trace)				\
-			printf(fmt, ## __VA_ARGS__);	\
-	} while (0)
+	int i;
 
 	if (error)
 		UNEXPECTED("map_command error");
@@ -1461,15 +1455,6 @@ aacraid_map_command_sg(void *arg, bus_dma_segment_t *segs, int nseg, int error)
 		UNEXPECTED("sync_cm");
 		return;
 	}
-
-#if 1	/* LLDBG */
-	if (cm->cm_ccb && cm->cm_ccb->ccb_h.func_code == XPT_SCSI_IO &&
-	    ll_get_scsi_command(cm->cm_ccb) == WRITE_10 &&
-	    MATCH_PATH(cm->cm_ccb->ccb_h.path))
-		trace = 1;
-	else
-		trace = 0;
-#endif
 
 	/* copy into the FIB */
 	if (cm->cm_sgtable != NULL) {
@@ -1551,9 +1536,6 @@ aacraid_map_command_sg(void *arg, bus_dma_segment_t *segs, int nseg, int error)
 			fib->Header.Size += nseg*sizeof(struct aac_sg_entryraw);
 		} else if ((cm->cm_sc->flags & AAC_FLAGS_SG_64BIT) == 0) {
 			struct aac_sg_table *sg;
-
-			TPRINTF("HERE: nseg=%d\n", nseg);
-
 			sg = cm->cm_sgtable;
 			sg->SgCount = htole32(nseg);
 			for (i = 0; i < nseg; i++) {
@@ -1600,14 +1582,6 @@ aacraid_map_command_sg(void *arg, bus_dma_segment_t *segs, int nseg, int error)
 	}
 
 	cm->cm_flags |= AAC_CMD_MAPPED;
-
-#if 1	/* LLDBG */
-	if (trace) {
-		ll_dump_fib(fib);
-		printf("sizeof(struct aac_fib_header) + sizeof(struct aac_srb) = 0x%lx\n",
-			sizeof(struct aac_fib_header) + sizeof(struct aac_srb));
-	}
-#endif
 
 	if (cm->cm_flags & AAC_CMD_WAIT) {
 		UNEXPECTED("CMD_WAIT");

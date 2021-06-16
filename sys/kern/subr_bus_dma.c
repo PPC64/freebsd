@@ -59,6 +59,20 @@ __FBSDID("$FreeBSD$");
 
 #include <machine/bus.h>
 
+#define LLDBG	1
+#if LLDBG
+#define TPRINTF(fmt, ...)				\
+	do {						\
+		if (trace)				\
+			printf(fmt, ## __VA_ARGS__);	\
+	} while (0)
+
+#define TFPRINTF(fmt, ...)	TPRINTF("%s: " fmt, __func__, ## __VA_ARGS__)
+#else
+#define TPRINTF(fmt, ...)	do { ; } while (0)
+#define TFPRINTF(fmt, ...)	do { ; } while (0)
+#endif
+
 /*
  * Load up data starting at offset within a region specified by a
  * list of virtual address ranges until either length or the region
@@ -407,19 +421,14 @@ bus_dmamap_load(bus_dma_tag_t dmat, bus_dmamap_t map, void *buf,
 	struct memdesc mem;
 	int error;
 	int nsegs;
+#if LLDBG
 	int trace;
-
-#define TPRINTF(fmt, ...)				\
-	do {						\
-		if (trace)				\
-			printf(fmt, ## __VA_ARGS__);	\
-	} while (0)
 
 	if (buflen == 0x40000)
 		trace = 1;
 	else
 		trace = 0;
-
+#endif
 
 	if ((flags & BUS_DMA_NOWAIT) == 0) {
 		mem = memdesc_vaddr(buf, buflen);
@@ -427,6 +436,11 @@ bus_dmamap_load(bus_dma_tag_t dmat, bus_dmamap_t map, void *buf,
 	}
 
 	nsegs = -1;
+
+	TFPRINTF("_bus_dmamap_load_buffer("
+		"dmat=%p, map=%p, buf=%p, buflen=0x%lx, flags=0x%x)\n",
+		dmat, map, buf, buflen, flags);
+
 	error = _bus_dmamap_load_buffer(dmat, map, buf, buflen, kernel_pmap,
 	    flags, NULL, &nsegs);
 	nsegs++;
@@ -434,14 +448,14 @@ bus_dmamap_load(bus_dma_tag_t dmat, bus_dmamap_t map, void *buf,
 	CTR5(KTR_BUSDMA, "%s: tag %p tag flags 0x%x error %d nsegs %d",
 	    __func__, dmat, flags, error, nsegs);
 
-	TPRINTF("%s: tag %p tag flags 0x%x error %d nsegs %d\n",
-	    __func__, dmat, flags, error, nsegs);
+	TFPRINTF("_bus_dmamap_load_buffer(): error=%d nsegs=%d\n",
+		error, nsegs);
+
 
 	if (error == EINPROGRESS)
 		return (error);
 
 	segs = _bus_dmamap_complete(dmat, map, NULL, nsegs, error);
-	TPRINTF("error2=%d\n", error);
 	if (error)
 		(*callback)(callback_arg, segs, 0, error);
 	else

@@ -153,6 +153,18 @@ static bus_addr_t add_bounce_page(bus_dma_tag_t dmat, bus_dmamap_t map,
 static void free_bounce_page(bus_dma_tag_t dmat, struct bounce_page *bpage);
 static __inline int run_filter(bus_dma_tag_t dmat, bus_addr_t paddr);
 
+#define LLDBG	1
+#if LLDBG
+
+#define TPRINTF(fmt, ...)				\
+	do {						\
+		if (trace)				\
+			printf(fmt, ## __VA_ARGS__);	\
+	} while (0)
+#else
+#define TPRINTF(fmt, ...) do { ; } while (0)
+#endif
+
 /*
  * Return true if a match is made.
  *
@@ -628,6 +640,14 @@ _bus_dmamap_count_pages(bus_dma_tag_t dmat, bus_dmamap_t map, pmap_t pmap,
         vm_offset_t vaddr;
         vm_offset_t vendaddr;
         bus_addr_t paddr;
+#if LLDBG
+	int trace;
+
+	if (buflen == 0x40000)
+		trace = 1;
+	else
+		trace = 0;
+#endif
 
 	if (map->pagesneeded == 0) {
 		CTR4(KTR_BUSDMA, "lowaddr= %d Maxmem= %d, boundary= %d, "
@@ -640,6 +660,7 @@ _bus_dmamap_count_pages(bus_dma_tag_t dmat, bus_dmamap_t map, pmap_t pmap,
 		 */
 		vaddr = (vm_offset_t)buf;
 		vendaddr = (vm_offset_t)buf + buflen;
+		TPRINTF("%s: va=0x%lx va_end=0x%lx\n", __func__, vaddr, vendaddr);
 
 		while (vaddr < vendaddr) {
 			bus_size_t sg_len;
@@ -656,6 +677,7 @@ _bus_dmamap_count_pages(bus_dma_tag_t dmat, bus_dmamap_t map, pmap_t pmap,
 			vaddr += sg_len;
 		}
 		CTR1(KTR_BUSDMA, "pagesneeded= %d\n", map->pagesneeded);
+		TPRINTF("%s: pagesneeded=%d\n", __func__, map->pagesneeded);
 	}
 }
 
@@ -807,6 +829,14 @@ _bus_dmamap_load_buffer(bus_dma_tag_t dmat,
 	bus_addr_t curaddr;
 	vm_offset_t kvaddr, vaddr;
 	int error;
+#if LLDBG
+	int trace;
+
+	if (buflen == 0x40000)
+		trace = 1;
+	else
+		trace = 0;
+#endif
 
 	if (segs == NULL)
 		segs = map->segments;
@@ -842,6 +872,7 @@ _bus_dmamap_load_buffer(bus_dma_tag_t dmat,
 		max_sgsize = MIN(buflen, dmat->maxsegsz);
 		sgsize = PAGE_SIZE - (curaddr & PAGE_MASK);
 		if (map->pagesneeded != 0 && run_filter(dmat, curaddr)) {
+			/* roundup2 here may be wrong */
 			sgsize = roundup2(sgsize, dmat->alignment);
 			sgsize = MIN(sgsize, max_sgsize);
 			curaddr = add_bounce_page(dmat, map, kvaddr, curaddr,
@@ -850,6 +881,8 @@ _bus_dmamap_load_buffer(bus_dma_tag_t dmat,
 			sgsize = MIN(sgsize, max_sgsize);
 		}
 
+		/* TPRINTF("%s: pa=0x%lx va=0x%lx buflen=0x%lx sgsize=0x%lx\n",
+			__func__, curaddr, vaddr, buflen, sgsize); */
 		sgsize = _bus_dmamap_addseg(dmat, map, curaddr, sgsize, segs,
 		    segp);
 		if (sgsize == 0)
@@ -861,6 +894,7 @@ _bus_dmamap_load_buffer(bus_dma_tag_t dmat,
 	/*
 	 * Did we fit?
 	 */
+	TPRINTF("%s: DONE: buflen=0x%lx\n", __func__, buflen);
 	return (buflen != 0 ? EFBIG : 0); /* XXX better return value here? */
 }
 

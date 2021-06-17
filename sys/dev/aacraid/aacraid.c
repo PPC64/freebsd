@@ -1287,6 +1287,8 @@ aac_free_commands(struct aac_softc *sc)
 void
 aacraid_map_command_sg(void *arg, bus_dma_segment_t *segs, int nseg, int error)
 {
+	static struct timeval lastprint;
+	static const struct timeval printinterval = { 10, 0 };
 	struct aac_softc *sc;
 	struct aac_command *cm;
 	struct aac_fib *fib;
@@ -1297,6 +1299,15 @@ aacraid_map_command_sg(void *arg, bus_dma_segment_t *segs, int nseg, int error)
 	fib = cm->cm_fib;
 	fwprintf(sc, HBA_FLAGS_DBG_FUNCTION_ENTRY_B, "nseg %d", nseg);
 	mtx_assert(&sc->aac_io_lock, MA_OWNED);
+
+	if (error != 0 && ratecheck(&lastprint, &printinterval))
+		device_printf(sc->aac_dev,
+		    "ERROR: failed to load buffer to DMA area, error %d\n",
+		    error);
+		/*
+		 * Let the command run (and fail) to be able to clean up and
+		 * wake up waiters in the interrupt handler.
+		 */
 
 	if ((sc->flags & AAC_FLAGS_SYNC_MODE) && sc->aac_sync_cm)
 		return;

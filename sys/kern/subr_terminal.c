@@ -44,6 +44,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/tty.h>
 
 #include <machine/stdarg.h>
+#include <machine/hcons.h>
 
 static MALLOC_DEFINE(M_TERMINAL, "terminal", "terminal device");
 
@@ -174,6 +175,12 @@ terminal_init(struct terminal *tm)
 		mtx_init(&tm->tm_mtx, "trmlck", NULL, MTX_SPIN);
 
 	teken_init(&tm->tm_emulator, &terminal_drawmethods, tm);
+#if HACKED
+	HPRINTF("%s: tm_emu=%p\n", __func__, &tm->tm_emulator);
+	HPRINTF("%s: r=%d c=%d\n", __func__,
+		tm->tm_emulator.t_winsize.tp_row, tm->tm_emulator.t_winsize.tp_col);
+	daddr_watch(&tm->tm_emulator.t_winsize.tp_row);
+#endif
 
 	fg = bg = -1;
 	TUNABLE_INT_FETCH("teken.fg_color", &fg);
@@ -606,6 +613,10 @@ termcn_cnputc(struct consdev *cp, int c)
 	struct terminal *tm = cp->cn_arg;
 	teken_attr_t backup;
 	char cv = c;
+
+	HPRINTF("%s: tm_emu=%p\n", __func__, &tm->tm_emulator);
+	HPRINTF("%s: r=%d c=%d\n", __func__,
+		tm->tm_emulator.t_winsize.tp_row, tm->tm_emulator.t_winsize.tp_col);
 
 	TERMINAL_LOCK_CONS(tm);
 	if (!(tm->tm_flags & TF_MUTE)) {

@@ -32,6 +32,7 @@
 #define	_TEKEN_H_
 
 #include <sys/types.h>
+#include <machine/hcons.h>
 
 /*
  * libteken: terminal emulation library.
@@ -146,7 +147,14 @@ struct __teken {
 	teken_attr_t	 t_saved_curattr;
 
 	teken_attr_t	 t_defattr;
+	/* PPC64 Data Watchpoint always watches a full double word */
+#if HACKED
+	unsigned int	pad0;
+#endif
 	teken_pos_t	 t_winsize;
+#if HACKED
+	unsigned int	pad1;
+#endif
 
 	/* For DECSTBM. */
 	teken_span_t	 t_scrollreg;

@@ -73,6 +73,8 @@ __FBSDID("$FreeBSD$");
 #include <machine/sr.h>
 #include <machine/trap.h>
 
+#include <machine/hcons.h>
+
 /* Below matches setjmp.S */
 #define	FAULTBUF_LR	21
 #define	FAULTBUF_R1	1
@@ -480,7 +482,17 @@ trap(struct trapframe *frame)
 			}
 			break;
 #endif
+#if HACKED
+		case EXC_HDSI:
+			HPUTS("HDSI");
+			HPUTS("HDSI");
+#endif
 		case EXC_DSI:
+#if HACKED
+			HPUTS("DSI");
+			HPUTS("DSI");
+			catch_watchpoint(frame);
+#endif
 			if (trap_pfault(frame, false, NULL, NULL))
  				return;
 			break;

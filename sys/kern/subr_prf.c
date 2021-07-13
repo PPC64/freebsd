@@ -90,6 +90,8 @@ __FBSDID("$FreeBSD$");
 #include <stdio.h>
 #endif
 
+#include <machine/hcons.h>
+
 #ifdef _KERNEL
 
 #define TOCONS	0x01
@@ -277,6 +279,11 @@ _vprintf(int level, int flags, const char *fmt, va_list ap)
 	char bufr[PRINTF_BUFR_SIZE];
 #endif
 
+#if CATCH_PANIC
+	static int n = 0;
+	HPUTS(__func__);
+#endif
+
 	TSENTER();
 	pca.tty = NULL;
 	pca.pri = level;
@@ -292,6 +299,31 @@ _vprintf(int level, int flags, const char *fmt, va_list ap)
 	pca.p_bufr = NULL;
 #endif
 
+#if CATCH_PANIC
+	if (fmt) {
+		va_list ap2;
+
+		HPUTS(fmt);
+		n++;
+		/* print panic message */
+		if (n == 2) {
+			va_copy(ap2, ap);
+			HPUTS(va_arg(ap2, const char *));
+			va_end(ap2);
+		/* reset */
+		} else if (n > 3) {
+			HPUTS("press any key to reboot");
+			for (;;) {
+				DELAY(100 * 1000);
+				if (hacked_cngetc() != -1)
+					break;
+			}
+
+			cpu_reset();
+		}
+	} else
+		HPUTS("fmt");
+#endif
 	retval = kvprintf(fmt, putchar, &pca, 10, ap);
 
 #ifdef PRINTF_BUFR_SIZE

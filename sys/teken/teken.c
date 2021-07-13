@@ -102,6 +102,9 @@ teken_funcs_putchar(const teken_t *t, const teken_pos_t *p, teken_char_t c,
     const teken_attr_t *a)
 {
 
+	HPRINTF("p->tp_row=%d t->t_winsize.tp_row=%d\n",
+		p->tp_row, t->t_winsize.tp_row);
+
 	teken_assert(p->tp_row < t->t_winsize.tp_row);
 	teken_assert(p->tp_col < t->t_winsize.tp_col);
 

@@ -133,6 +133,8 @@ __FBSDID("$FreeBSD$");
 #include "mmu_oea64.h"
 #endif
 
+#include <machine/hcons.h>
+
 #ifndef __powerpc64__
 struct bat	battable[16];
 #endif
@@ -421,6 +423,9 @@ aim_cpu_init(vm_offset_t toc)
 	bcopy(&hypertrapcode, (void *)(EXC_HMI + trap_offset), trapsize);
 	bcopy(&hypertrapcode, (void *)(EXC_HVI + trap_offset), trapsize);
 	bcopy(&hypertrapcode, (void *)(EXC_SOFT_PATCH + trap_offset), trapsize);
+#if HACKED
+	bcopy(&hypertrapcode, (void *)(EXC_HDSI + trap_offset), trapsize);
+#endif
 	#endif
 
 	bcopy(&rstcode, (void *)(EXC_RST + trap_offset), (size_t)&rstcodeend -

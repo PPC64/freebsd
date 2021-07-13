@@ -54,6 +54,9 @@ __FBSDID("$FreeBSD$");
 #include "opal.h"
 #include "uart_if.h"
 
+#include <machine/stdarg.h>
+#include <machine/hcons.h>
+
 struct uart_opal_softc {
 	device_t dev;
 	phandle_t node;
@@ -246,6 +249,10 @@ uart_opal_cnprobe(struct consdev *cp)
 	char buf[64];
 	phandle_t input, chosen;
 	static struct uart_opal_softc sc;
+
+#if HACKED
+	return;
+#endif
 
 	if (opal_check() != 0)
 		goto fail;
@@ -614,3 +621,99 @@ static driver_t opalcons_driver = {
 static devclass_t opalcons_devclass;
 
 DRIVER_MODULE(opalcons, opal, opalcons_driver, opalcons_devclass, 0, 0);
+
+#if HACKED
+static struct uart_opal_softc hacked_sc;
+
+static void
+hacked_cnputc(int c)
+{
+	unsigned char ch = c;
+	int i;
+	struct uart_opal_softc *sc = &hacked_sc;
+
+	if (sc->node == 0)
+		return;
+
+	/* Clear FIFO if needed. Must be repeated few times. */
+	for (i = 0; i < 20; i++)
+		opal_call(OPAL_POLL_EVENTS, NULL);
+	uart_opal_put(sc, &ch, 1);
+}
+
+void
+hacked_puts(const char *str)
+{
+	size_t i, n;
+
+	n = strlen(str);
+	for (i = 0; i < n; i++)
+		hacked_cnputc(str[i]);
+	hacked_cnputc('\r');
+	hacked_cnputc('\n');
+}
+
+void
+hacked_cnprobe(void)
+{
+	phandle_t input;
+	struct uart_opal_softc *sc = &hacked_sc;
+
+	if (opal_check() != 0)
+		return;
+
+	if ((input = OF_finddevice("/ibm,opal/consoles/serial@0")) == -1)
+		return;
+
+	sc->node = input;
+	if (uart_opal_probe_node(sc) != 0)
+		return;
+	mtx_init(&sc->sc_mtx, "uart_opal", NULL, MTX_SPIN | MTX_QUIET |
+	    MTX_NOWITNESS);
+
+	/*
+	hacked_cnputc('H');
+	hacked_cnputc('A');
+	hacked_cnputc('C');
+	hacked_cnputc('K');
+	hacked_cnputc('E');
+	hacked_cnputc('D');
+	hacked_cnputc('!');
+	hacked_cnputc('\n');
+	*/
+	hacked_puts("HACKED!");
+	DELAY(1000 * 1000);
+	return;
+}
+
+void
+hacked_printf(const char *fmt, ...)
+{
+	static char buf[512];
+	va_list ap;
+	size_t i, n;
+
+	va_start(ap, fmt);
+	vsprintf(buf, fmt, ap);
+	va_end(ap);
+
+	n = strlen(buf);
+	for (i = 0; i < n; i++) {
+		if (buf[i] == '\n')
+			hacked_cnputc('\r');
+		hacked_cnputc(buf[i]);
+	}
+}
+
+int
+hacked_cngetc(void)
+{
+	struct uart_opal_softc *sc = &hacked_sc;
+
+	if (sc->node == 0)
+		return -1;
+
+	return (uart_opal_getc(sc));
+}
+
+#endif

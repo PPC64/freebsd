@@ -39,6 +39,8 @@
  *	#include <powerpc/aim/trap_subr.S>
  */
 
+#include <machine/hcons.h>
+
 /* Locate the per-CPU data structure */
 #define GET_CPUINFO(r)  \
         mfsprg0  r
@@ -201,6 +203,76 @@ restore_kernsrs:
 	std	%r30,FRAME_SRR0+48(1);					\
 	std	%r31,FRAME_SRR1+48(1);					\
 	ld	%r13,PC_CURTHREAD(%r2)	/* set kernel curthread */
+
+/*
+ * This FRAME_SETUP version doesn't change kernel MSR, to avoid having
+ * PSL_IR and PSL_DR set before MMU is initialized.
+ * This is needed to be able to use daddr_watch() before MMU is up.
+ */
+#define	FRAME_SETUP2(savearea)						\
+	GET_CPUINFO(%r31);						\
+	mfsrr0	%r30;							\
+	std	%r30,(savearea+CPUSAVE_SRR0)(%r31);	/* save SRR0 */	\
+	mfsrr1	%r30;							\
+	std	%r30,(savearea+CPUSAVE_SRR1)(%r31);	/* save SRR1 */	\
+	mfsprg1	%r31;			/* get saved SP (clears SPRG1) */ \
+	stdu	%r31,-(FRAMELEN+288)(%r1); /* save it in the callframe */ \
+	std	%r0, FRAME_0+48(%r1);	/* save r0 in the trapframe */	\
+	std	%r31,FRAME_1+48(%r1);	/* save SP   "      "       */	\
+	std	%r2, FRAME_2+48(%r1);	/* save r2   "      "       */	\
+	std	%r28,FRAME_LR+48(%r1);	/* save LR   "      "       */	\
+	std	%r29,FRAME_CR+48(%r1);	/* save CR   "      "       */	\
+	GET_CPUINFO(%r2);						\
+	ld	%r27,(savearea+CPUSAVE_R27)(%r2); /* get saved r27 */	\
+	ld	%r28,(savearea+CPUSAVE_R28)(%r2); /* get saved r28 */	\
+	ld	%r29,(savearea+CPUSAVE_R29)(%r2); /* get saved r29 */	\
+	ld	%r30,(savearea+CPUSAVE_R30)(%r2); /* get saved r30 */	\
+	ld	%r31,(savearea+CPUSAVE_R31)(%r2); /* get saved r31 */	\
+	std	%r3,  FRAME_3+48(%r1);	/* save r3-r31 */		\
+	std	%r4,  FRAME_4+48(%r1);					\
+	std	%r5,  FRAME_5+48(%r1);					\
+	std	%r6,  FRAME_6+48(%r1);					\
+	std	%r7,  FRAME_7+48(%r1);					\
+	std	%r8,  FRAME_8+48(%r1);					\
+	std	%r9,  FRAME_9+48(%r1);					\
+	std	%r10, FRAME_10+48(%r1);					\
+	std	%r11, FRAME_11+48(%r1);					\
+	std	%r12, FRAME_12+48(%r1);					\
+	std	%r13, FRAME_13+48(%r1);					\
+	std	%r14, FRAME_14+48(%r1);					\
+	std	%r15, FRAME_15+48(%r1);					\
+	std	%r16, FRAME_16+48(%r1);					\
+	std	%r17, FRAME_17+48(%r1);					\
+	std	%r18, FRAME_18+48(%r1);					\
+	std	%r19, FRAME_19+48(%r1);					\
+	std	%r20, FRAME_20+48(%r1);					\
+	std	%r21, FRAME_21+48(%r1);					\
+	std	%r22, FRAME_22+48(%r1);					\
+	std	%r23, FRAME_23+48(%r1);					\
+	std	%r24, FRAME_24+48(%r1);					\
+	std	%r25, FRAME_25+48(%r1);					\
+	std	%r26, FRAME_26+48(%r1);					\
+	std	%r27, FRAME_27+48(%r1);					\
+	std	%r28, FRAME_28+48(%r1);					\
+	std	%r29, FRAME_29+48(%r1);					\
+	std	%r30, FRAME_30+48(%r1);					\
+	std	%r31, FRAME_31+48(%r1);					\
+	ld	%r28,(savearea+CPUSAVE_AIM_DAR)(%r2);  /* saved DAR */	\
+	ld	%r29,(savearea+CPUSAVE_AIM_DSISR)(%r2);/* saved DSISR */\
+	ld	%r30,(savearea+CPUSAVE_SRR0)(%r2); /* saved SRR0 */	\
+	ld	%r31,(savearea+CPUSAVE_SRR1)(%r2); /* saved SRR1 */	\
+	mfxer	%r3;							\
+	mfctr	%r4;							\
+	mfsprg3	%r5;							\
+	std	%r3, FRAME_XER+48(1);	/* save xer/ctr/exc */		\
+	std	%r4, FRAME_CTR+48(1);					\
+	std	%r5, FRAME_EXC+48(1);					\
+	std	%r28,FRAME_AIM_DAR+48(1);				\
+	std	%r29,FRAME_AIM_DSISR+48(1); /* save dsisr/srr0/srr1 */	\
+	std	%r30,FRAME_SRR0+48(1);					\
+	std	%r31,FRAME_SRR1+48(1);					\
+	ld	%r13,PC_CURTHREAD(%r2)	/* set kernel curthread */
+
 
 #define	FRAME_LEAVE(savearea)						\
 /* Disable exceptions: */						\
@@ -737,7 +809,7 @@ disitrap:
 	std	%r30,(PC_TEMPSAVE+CPUSAVE_AIM_DAR)(%r1)
 	std	%r31,(PC_TEMPSAVE+CPUSAVE_AIM_DSISR)(%r1)
 
-#ifdef KDB
+#if defined(KDB) && KDB_ON_DISITRAP
 	/* Try to detect a kernel stack overflow */
 	mfsrr1	%r31
 	mtcr	%r31
@@ -850,7 +922,11 @@ u_trap:
  * Now the common trap catching code.
  */
 k_trap:
+#if HACKED
+	FRAME_SETUP2(PC_TEMPSAVE)
+#else
 	FRAME_SETUP(PC_TEMPSAVE)
+#endif
 /* Call C interrupt dispatcher: */
 trapagain:
 	GET_TOCBASE(%r2)

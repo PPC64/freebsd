@@ -32,6 +32,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/param.h>
 #include <sys/kernel.h>
 #include <sys/systm.h>
+#include <sys/module.h>
 #include <sys/fbio.h>
 
 #include <dev/vt/vt.h>
@@ -48,6 +49,8 @@ __FBSDID("$FreeBSD$");
 #include <dev/ofw/ofw_bus.h>
 #include <dev/ofw/ofw_pci.h>
 #include <dev/ofw/ofw_subr.h>
+
+#include <machine/hcons.h>
 
 struct ofwfb_softc {
 	struct fb_info	fb;
@@ -93,6 +96,7 @@ VT_DRIVER_DECLARE(vt_ofwfb, vt_ofwfb_driver);
 static int
 ofwfb_probe(struct vt_device *vd)
 {
+	struct ofwfb_softc *sc;
 	int disabled;
 	phandle_t chosen, node;
 	ihandle_t stdout;
@@ -107,6 +111,7 @@ ofwfb_probe(struct vt_device *vd)
 	if (chosen == -1)
 		return (CN_DEAD);
 
+	sc = &ofwfb_conssoftc;
 	node = -1;
 	if (OF_getencprop(chosen, "stdout", &stdout, sizeof(stdout)) ==
 	    sizeof(stdout))
@@ -120,15 +125,127 @@ ofwfb_probe(struct vt_device *vd)
 		 * using "screen" directly.
 		 */
 		node = OF_finddevice("screen");
+		if (node == -1)
+			return (CN_DEAD);
+		stdout = OF_open("screen");
 	}
 	OF_getprop(node, "device_type", buf, sizeof(buf));
 	if (strcmp(buf, "display") != 0)
 		return (CN_DEAD);
 
+	sc->sc_handle = stdout;
+	sc->sc_node = node;
+
 	/* Looks OK... */
 	return (CN_INTERNAL);
 }
 
+static void
+ofwfb_dev_identify(driver_t *driver, device_t parent)
+{
+
+	/* Try to guess if we need a device attachment. */
+	if (ofwfb_conssoftc.sc_node > 0)
+		return;
+
+	if (device_find_child(parent, "fb", -1) != NULL)
+		return;
+
+	device_add_child(parent, "fb", -1);
+}
+
+#define LLDBG	1
+
+static int
+ofwfb_dev_probe(device_t dev)
+{
+	phandle_t node;
+	device_t check;
+	const char *type;
+#if LLDBG
+	const char *name;
+#endif
+
+	check = dev;
+	node = ofw_bus_get_node(check);
+
+#if LLDBG
+	name = ofw_bus_get_name(check);
+	printf("%s: dev=%p name=%s\n", __func__, dev, name);
+#endif
+
+	/* This may be a fake child of an OF node. */
+	if (node == -1) {
+		/* Check the parent. */
+		check = device_get_parent(check);
+		node = ofw_bus_get_node(check);
+#if LLDBG
+		name = ofw_bus_get_name(check);
+		printf("%s: dev=%p check=%p node=0x%x name=%s\n",
+			__func__, dev, check, node, name);
+#endif
+		if (node == -1)
+			return (ENXIO);
+	}
+
+	type = ofw_bus_get_type(check);
+#if LLDBG
+	printf("%s: check=%p node=0x%x: type=%s\n",
+		__func__, check, node, type == NULL? "NULL" : type);
+#endif
+	if (type == NULL || strcmp(type, "display") != 0)
+		return (ENXIO);
+
+	device_set_desc(dev, "Open Firmware video console");
+	return (BUS_PROBE_DEFAULT);
+}
+
+static int
+ofwfb_dev_attach(device_t dev)
+{
+	struct ofwfb_softc *sc = &ofwfb_conssoftc;
+	phandle_t node;
+
+#if LLDBG
+	printf("%s\n", __func__);
+#endif
+
+	device_set_softc(dev, sc);
+
+	node = ofw_bus_get_node(dev);
+
+	/* This may be a fake child of an OF node. */
+	if (node == -1) {
+		/* Check the parent. */
+		node = ofw_bus_get_node(device_get_parent(dev));
+		if (node == -1)
+			return (ENXIO);
+	}
+
+	sc->sc_node = node;
+
+	vt_allocate(&vt_ofwfb_driver, &sc->fb);
+
+	return (0);
+}
+
+static device_method_t ofwfb_dev_methods[] = {
+	DEVMETHOD(device_identify,	ofwfb_dev_identify),
+	DEVMETHOD(device_probe,		ofwfb_dev_probe),
+	DEVMETHOD(device_attach,	ofwfb_dev_attach),
+	DEVMETHOD_END
+};
+
+
+static driver_t ofwfb_dev_driver = {
+	"fb",
+	ofwfb_dev_methods,
+	0	/* Don't allocate a softc, one will be provided. */
+};
+
+static devclass_t ofwfb_dev_devclass;
+
+DRIVER_MODULE(fb, vgapci, ofwfb_dev_driver, ofwfb_dev_devclass, 0, 0);
 static void
 ofwfb_bitblt_bitmap(struct vt_device *vd, const struct vt_window *vw,
     const uint8_t *pattern, const uint8_t *mask,
@@ -384,7 +501,6 @@ ofwfb_init(struct vt_device *vd)
 {
 	struct ofwfb_softc *sc;
 	char buf[64];
-	phandle_t chosen;
 	phandle_t node;
 	pcell_t depth, height, width, stride;
 	uint32_t vendor_id = 0;
@@ -397,26 +513,7 @@ ofwfb_init(struct vt_device *vd)
 	/* Initialize softc */
 	vd->vd_softc = sc = &ofwfb_conssoftc;
 
-	node = -1;
-	chosen = OF_finddevice("/chosen");
-	if (OF_getencprop(chosen, "stdout", &sc->sc_handle,
-	    sizeof(ihandle_t)) == sizeof(ihandle_t))
-		node = OF_instance_to_package(sc->sc_handle);
-	if (node == -1)
-		/* Try "/chosen/stdout-path" now */
-		if (OF_getprop(chosen, "stdout-path", buf, sizeof(buf)) > 0) {
-			node = OF_finddevice(buf);
-			if (node != -1)
-				sc->sc_handle = OF_open(buf);
-		}
-	if (node == -1) {
-		/*
-		 * The "/chosen/stdout" does not exist try
-		 * using "screen" directly.
-		 */
-		node = OF_finddevice("screen");
-		sc->sc_handle = OF_open("screen");
-	}
+	node = sc->sc_node;
 	OF_getprop(node, "device_type", buf, sizeof(buf));
 	if (strcmp(buf, "display") != 0)
 		return (CN_DEAD);
@@ -429,10 +526,6 @@ ofwfb_init(struct vt_device *vd)
 	if (OF_getencprop(OF_parent(node), "vendor-id", &vendor_id,
 	    sizeof(vendor_id)) == sizeof(vendor_id))
 		sc->vendor_id = vendor_id;
-
-
-	/* Keep track of the OF node */
-	sc->sc_node = node;
 
 	/*
 	 * Try to use a 32-bit framebuffer if possible. This may be
@@ -462,6 +555,9 @@ ofwfb_init(struct vt_device *vd)
 
 	sc->fb.fb_height = height;
 	sc->fb.fb_width = width;
+
+	HPRINTF("ofwfb h 0x%lx w 0x%lx\n", sc->fb.fb_height, sc->fb.fb_width);
+
 	sc->fb.fb_stride = stride;
 	sc->fb.fb_size = sc->fb.fb_height * sc->fb.fb_stride;
 	sc->endian_flip = 0;

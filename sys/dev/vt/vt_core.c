@@ -63,6 +63,8 @@ __FBSDID("$FreeBSD$");
 #include <machine/frame.h>
 #endif
 
+#include <machine/hcons.h>
+
 static int vtterm_cngrab_noswitch(struct vt_device *, struct vt_window *);
 static int vtterm_cnungrab_noswitch(struct vt_device *, struct vt_window *);
 
@@ -678,7 +680,11 @@ vt_winsize(struct vt_device *vd, struct vt_font *vf, struct winsize *size)
 		size->ws_ypixel -= vt_logo_sprite_height;
 	size->ws_row = size->ws_ypixel;
 	size->ws_col = size->ws_xpixel = vd->vd_width;
+
+	HPRINTF("r %d c %d\n", size->ws_ypixel, vd->vd_width);
+
 	if (vf != NULL) {
+		HPUTS("vf");
 		size->ws_row = MIN(size->ws_row / vf->vf_height,
 		    PIXEL_HEIGHT(VT_FB_MAX_HEIGHT));
 		size->ws_col = MIN(size->ws_col / vf->vf_width,
@@ -1611,6 +1617,8 @@ vtterm_cnprobe(struct terminal *tm, struct consdev *cp)
 		/* Initialization already done. */
 		return;
 
+	HPRINTF("vd w %d h %d\n", vd->vd_width, vd->vd_height);
+
 	SET_FOREACH(vtdlist, vt_drv_set) {
 		vtd = *vtdlist;
 		if (vtd->vd_probe == NULL)
@@ -1641,6 +1649,8 @@ vtterm_cnprobe(struct terminal *tm, struct consdev *cp)
 	vd->vd_windows[VT_CONSWINDOW] = vw;
 	sprintf(cp->cn_name, "ttyv%r", VT_UNIT(vw));
 
+	HPRINTF("vd w %d h %d\n", vd->vd_width, vd->vd_height);
+
 	vt_init_font_static();
 
 	/* Attach default font if not in TEXTMODE. */
@@ -1648,6 +1658,8 @@ vtterm_cnprobe(struct terminal *tm, struct consdev *cp)
 		vw->vw_font = vtfont_ref(vt_font_assigned);
 		vt_compute_drawable_area(vw);
 	}
+
+	HPRINTF("vd w %d h %d\n", vd->vd_width, vd->vd_height);
 
 	/*
 	 * The original screen size was faked (_VTDEFW x _VTDEFH). Now
@@ -1661,6 +1673,7 @@ vtterm_cnprobe(struct terminal *tm, struct consdev *cp)
 	vw->vw_buf.vb_terminal = tm;
 	vtbuf_init_early(&vw->vw_buf);
 	vt_winsize(vd, vw->vw_font, &wsz);
+	HPRINTF("wsz: r=%d c=%d\n", wsz.ws_row, wsz.ws_col);
 	a = teken_get_curattr(&tm->tm_emulator);
 	terminal_set_winsize_blank(tm, &wsz, 1, a);
 

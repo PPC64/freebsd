@@ -131,6 +131,8 @@ __FBSDID("$FreeBSD$");
 #include <dev/ofw/openfirm.h>
 #include <dev/ofw/ofw_subr.h>
 
+#include <machine/hcons.h>
+
 int cold = 1;
 #ifdef __powerpc64__
 int cacheline_size = 128;
@@ -422,7 +424,14 @@ powerpc_init(vm_offset_t fdt, vm_offset_t toc, vm_offset_t ofentry, void *mdp,
 	/*
 	 * Initialize the console before printing anything.
 	 */
+#if HACKED
+	hacked_cnprobe();
+	HPUTS("hcons ready");
+#endif
+
+#if !LATE_CNINIT
 	cninit();
+#endif
 
 #ifdef AIM
 	aim_cpu_init(toc);
@@ -452,6 +461,17 @@ powerpc_init(vm_offset_t fdt, vm_offset_t toc, vm_offset_t ofentry, void *mdp,
 	thread0.td_oncpu = bsp.cr_cpuid;
 	pc->pc_cpuid = bsp.cr_cpuid;
 	pc->pc_hwref = bsp.cr_hwref;
+
+	HPUTS("init: BEFORE CRASH");
+
+#if LATE_CNINIT
+	cninit();
+#endif
+
+#if HACKED
+	printf("CRASH");
+	HPUTS(" - didn't crash!");
+#endif
 
 	/*
 	 * Init KDB

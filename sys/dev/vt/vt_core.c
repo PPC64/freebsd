@@ -681,10 +681,7 @@ vt_winsize(struct vt_device *vd, struct vt_font *vf, struct winsize *size)
 	size->ws_row = size->ws_ypixel;
 	size->ws_col = size->ws_xpixel = vd->vd_width;
 
-	HPRINTF("r %d c %d\n", size->ws_ypixel, vd->vd_width);
-
 	if (vf != NULL) {
-		HPUTS("vf");
 		size->ws_row = MIN(size->ws_row / vf->vf_height,
 		    PIXEL_HEIGHT(VT_FB_MAX_HEIGHT));
 		size->ws_col = MIN(size->ws_col / vf->vf_width,
@@ -1617,8 +1614,6 @@ vtterm_cnprobe(struct terminal *tm, struct consdev *cp)
 		/* Initialization already done. */
 		return;
 
-	HPRINTF("vd w %d h %d\n", vd->vd_width, vd->vd_height);
-
 	SET_FOREACH(vtdlist, vt_drv_set) {
 		vtd = *vtdlist;
 		if (vtd->vd_probe == NULL)
@@ -1658,8 +1653,6 @@ vtterm_cnprobe(struct terminal *tm, struct consdev *cp)
 		vw->vw_font = vtfont_ref(vt_font_assigned);
 		vt_compute_drawable_area(vw);
 	}
-
-	HPRINTF("vd w %d h %d\n", vd->vd_width, vd->vd_height);
 
 	/*
 	 * The original screen size was faked (_VTDEFW x _VTDEFH). Now

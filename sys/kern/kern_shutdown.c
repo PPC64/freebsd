@@ -100,6 +100,7 @@ __FBSDID("$FreeBSD$");
 #include <vm/swap_pager.h>
 
 #include <sys/signalvar.h>
+#include <machine/hcons.h>
 
 static MALLOC_DEFINE(M_DUMPER, "dumper", "dumper block buffer");
 
@@ -895,6 +896,11 @@ vpanic(const char *fmt, va_list ap)
 		vprintf(fmt, ap);
 		printf("\n");
 	}
+
+#if HACKED
+	reboot_on_keypress();
+#endif
+
 #ifdef SMP
 	printf("cpuid = %d\n", PCPU_GET(cpuid));
 #endif

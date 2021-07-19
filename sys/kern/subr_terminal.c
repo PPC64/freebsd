@@ -179,7 +179,7 @@ terminal_init(struct terminal *tm)
 	HPRINTF("%s: tm_emu=%p\n", __func__, &tm->tm_emulator);
 	HPRINTF("%s: r=%d c=%d\n", __func__,
 		tm->tm_emulator.t_winsize.tp_row, tm->tm_emulator.t_winsize.tp_col);
-	daddr_watch(&tm->tm_emulator.t_winsize.tp_row);
+	/* daddr_watch(&tm->tm_emulator.t_winsize.tp_row); */
 #endif
 
 	fg = bg = -1;
@@ -614,9 +614,11 @@ termcn_cnputc(struct consdev *cp, int c)
 	teken_attr_t backup;
 	char cv = c;
 
+	/*
 	HPRINTF("%s: tm_emu=%p\n", __func__, &tm->tm_emulator);
 	HPRINTF("%s: r=%d c=%d\n", __func__,
 		tm->tm_emulator.t_winsize.tp_row, tm->tm_emulator.t_winsize.tp_col);
+	 */
 
 	TERMINAL_LOCK_CONS(tm);
 	if (!(tm->tm_flags & TF_MUTE)) {

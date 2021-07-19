@@ -922,7 +922,7 @@ u_trap:
  * Now the common trap catching code.
  */
 k_trap:
-#if HACKED
+#if 0
 	FRAME_SETUP2(PC_TEMPSAVE)
 #else
 	FRAME_SETUP(PC_TEMPSAVE)

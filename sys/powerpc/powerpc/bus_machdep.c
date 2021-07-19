@@ -48,6 +48,7 @@ __FBSDID("$FreeBSD$");
 #include <machine/bus.h>
 #include <machine/pio.h>
 #include <machine/md_var.h>
+#include <machine/hcons.h>
 
 #define TODO panic("%s: not implemented", __func__)
 
@@ -116,6 +117,12 @@ bs_remap_earlyboot(void)
 	for (i = 0; i < earlyboot_map_idx; i++) {
 		spa = earlyboot_mappings[i].addr;
 
+		HPRINTF("%s: %d spa 0x%lx\n", __func__, i, spa, spa);
+
+		HPRINTF("%s: dm 0x%lx em.virt 0x%lx dmapped %d\n",
+			__func__, PHYS_TO_DMAP(spa), earlyboot_mappings[i].virt,
+			pmap_dev_direct_mapped(spa, earlyboot_mappings[i].size));
+
 		if (hw_direct_map &&
 		   PHYS_TO_DMAP(spa) == earlyboot_mappings[i].virt &&
 		   pmap_dev_direct_mapped(spa, earlyboot_mappings[i].size) == 0)
@@ -133,6 +140,9 @@ bs_remap_earlyboot(void)
 
 		pa = trunc_page(spa);
 		va = trunc_page(earlyboot_mappings[i].virt);
+
+		HPRINTF("%s: %d ma 0x%x va 0x%lx pa 0x%lx\n", __func__, i, (unsigned)ma, va, pa);
+
 		while (pa < spa + earlyboot_mappings[i].size) {
 			pmap_kenter_attr(va, pa, ma);
 			va += PAGE_SIZE;

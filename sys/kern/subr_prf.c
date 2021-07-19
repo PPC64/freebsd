@@ -324,6 +324,19 @@ _vprintf(int level, int flags, const char *fmt, va_list ap)
 	} else
 		HPUTS("fmt");
 #endif
+
+#if HACKED
+	if (fmt) {
+		static char buf[512];
+		va_list ap2;
+
+		va_copy(ap2, ap);
+		vsprintf(buf, fmt, ap2);
+		va_end(ap2);
+		HPRINTF("%s", buf);
+	}
+#endif
+
 	retval = kvprintf(fmt, putchar, &pca, 10, ap);
 
 #ifdef PRINTF_BUFR_SIZE

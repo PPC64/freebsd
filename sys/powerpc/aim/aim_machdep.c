@@ -483,8 +483,6 @@ aim_cpu_init(vm_offset_t toc)
 	 * should do.
 	 */
 	if (cpu_features2 & PPC_FEATURE2_ARCH_3_00) {
-		radix_mmu = 0;
-		TUNABLE_INT_FETCH("radix_mmu", &radix_mmu);
 		if (radix_mmu)
 			pmap_mmu_install(MMU_TYPE_RADIX, BUS_PROBE_GENERIC);
 		else
@@ -603,6 +601,8 @@ pmap_early_io_map(vm_paddr_t pa, vm_size_t size)
 {
 	KASSERT(!pmap_bootstrapped, ("Not available after PMAP started!"));
 
+	HPRINTF("%s: pa 0x%lx size %ld\n", __func__, pa, size);
+
 	/*
 	 * If we have the MMU up in early boot, assume it is 1:1. Otherwise,
 	 * try to get the address in a memory region compatible with the
@@ -610,7 +610,13 @@ pmap_early_io_map(vm_paddr_t pa, vm_size_t size)
 	 */
 	if (mfmsr() & PSL_DR)
 		return (pa);
-	else
+	else if (radix_mmu) {
+		vm_offset_t va;
+
+		va = virtual_avail;
+		virtual_avail += round_page(size + pa - trunc_page(pa));
+		return (va);
+	} else
 		return (DMAP_BASE_ADDRESS + pa);
 }
 

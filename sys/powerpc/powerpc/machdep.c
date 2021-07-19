@@ -257,6 +257,24 @@ void booke_cpu_init(void);
 static void	load_external_symtab(void);
 #endif
 
+static void
+pmap_early_io_map_init(void)
+{
+	if ((cpu_features2 & PPC_FEATURE2_ARCH_3_00) == 0)
+		radix_mmu = 0;
+	else
+		TUNABLE_INT_FETCH("radix_mmu", &radix_mmu);
+
+	/*
+	* When using Radix, set the start and end of kva early, to be able to
+	* use KVAs on pmap_early_io_map and remap them safely later.
+	*/
+	if (radix_mmu) {
+		virtual_avail = VM_MIN_KERNEL_ADDRESS;
+		virtual_end = VM_MAX_SAFE_KERNEL_ADDRESS;
+	}
+}
+
 uintptr_t
 powerpc_init(vm_offset_t fdt, vm_offset_t toc, vm_offset_t ofentry, void *mdp,
     uint32_t mdp_cookie)
@@ -418,6 +436,8 @@ powerpc_init(vm_offset_t fdt, vm_offset_t toc, vm_offset_t ofentry, void *mdp,
 
 	if (ofw_bootargs)
 		ofw_parse_bootargs();
+
+	pmap_early_io_map_init();
 
 	/*
 	 * Initialize the console before printing anything.
